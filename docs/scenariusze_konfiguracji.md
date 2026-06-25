@@ -8,6 +8,7 @@ flowchart TD
     Start["Co mierzysz?"] --> Sim["virtual_gp350.py"]
     Start --> RS232["prawdziwy RS-232 Module"]
     Start --> Digital["prawdziwy Digital Interface"]
+    Start --> Auto["2x GP350 autodetekcja"]
     Start --> Grafana["InfluxDB + Grafana"]
     Start --> Debug["debug komunikacji"]
     Start --> Long["długi pomiar"]
@@ -36,6 +37,54 @@ csv_filepath = data/sim_test.csv
 csv_mode = overwrite
 log_file = logs/sim_test.log
 ```
+
+## 1A. Dwa GP350 przez USB-RS232, autodetekcja
+
+Najpierw sprawdź, co wykrywa skaner:
+
+```bash
+uv run python -m collectors.gp350_collector --discover
+```
+
+Pierwszy kolektor:
+
+```ini
+[Connection]
+module_type = auto
+serial_port = auto
+
+[Detection]
+device_index = 0
+scan_rs485 = false
+
+[Device]
+device_name = GP350_CHAMBER
+channel = IG1
+
+[File]
+csv_filepath = data/gp350_chamber.csv
+```
+
+Drugi kolektor:
+
+```ini
+[Connection]
+module_type = auto
+serial_port = auto
+
+[Detection]
+device_index = 1
+scan_rs485 = false
+
+[Device]
+device_name = GP350_LOADLOCK
+channel = IG1
+
+[File]
+csv_filepath = data/gp350_loadlock.csv
+```
+
+Szczegóły: `docs/autodetekcja_urzadzen.md`.
 
 ## 2. Prawdziwy GP350 - RS-232 Module
 

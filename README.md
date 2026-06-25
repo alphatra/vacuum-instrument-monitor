@@ -56,6 +56,28 @@ uv run python serial_terminal.py /dev/cu.usbserial-XXXX --address 1 --line-termi
 Use `--verbose` with `virtual_gp350.py` to print raw serial bytes while
 debugging.
 
+## Device Discovery
+
+Scan connected serial adapters for GP350 controllers:
+
+```bash
+uv run python -m collectors.gp350_collector --discover
+```
+
+Run collector with automatic port and module detection:
+
+```bash
+uv run python -m collectors.gp350_collector
+```
+
+When two GP350 controllers are connected, run two collector processes with
+separate configs or choose detected index:
+
+```bash
+uv run python -m collectors.gp350_collector --auto-device-index 0
+uv run python -m collectors.gp350_collector --auto-device-index 1
+```
+
 ## Current GP350 Commands
 
 - `DS IG` returns RS-232 pressure, e.g. `1.20E-07`.
@@ -96,6 +118,12 @@ Real GP350 wiring and DIP switch checklist:
 
 InfluxDB + Grafana setup:
 [docs/influxdb_grafana.md](docs/influxdb_grafana.md)
+
+Automatic serial device discovery:
+[docs/autodetekcja_urzadzen.md](docs/autodetekcja_urzadzen.md)
+
+Linux runner, systemd autostart, external InfluxDB/Grafana:
+[docs/linux_systemd_runner.md](docs/linux_systemd_runner.md)
 
 Run collector:
 

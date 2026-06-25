@@ -6,6 +6,7 @@ import os
 import sys
 import time
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
 if __package__ in {None, ""}:
@@ -14,6 +15,12 @@ if __package__ in {None, ""}:
 import serial
 from collectors.config import AppConfig, ConfigValidationError
 from collectors.csv_writer import CsvWriter, MeasurementRecord
+from collectors.device_discovery import (
+    DetectedDevice,
+    DeviceDiscoveryError,
+    discover_gp350_devices,
+    select_gp350_device,
+)
 from collectors.influx_writer import InfluxConfig, InfluxWriter
 from collectors.serial_client import SerialClient
 from simulators import GP350Parser, ParsedQuality
@@ -29,6 +36,21 @@ def parse_args() -> argparse.Namespace:
         help="Ścieżka do pliku konfiguracyjnego",
     )
     parser.add_argument("--port", help="Ścieżka do portu serial override config")
+    parser.add_argument(
+        "--discover",
+        action="store_true",
+        help="Wykryj GP350 na portach serial i zakończ",
+    )
+    parser.add_argument(
+        "--auto-device-index",
+        type=int,
+        help="Indeks urządzenia wybranego przy serial_port=auto",
+    )
+    parser.add_argument(
+        "--scan-rs485",
+        action="store_true",
+        help="Podczas autodetekcji skanuj adresy #00-#31",
+    )
     return parser.parse_args()
 
 
@@ -68,6 +90,90 @@ def build_serial_command(cfg: AppConfig) -> str:
         return cfg.command
 
     return f"#{cfg.rs485_address:02d}{cfg.command}"
+
+
+def discovery_module_types(cfg: AppConfig) -> tuple[str, ...]:
+    if cfg.module_type == "auto":
+        return ("digital", "rs232")
+
+    return (cfg.module_type,)
+
+
+def discovery_rs485_addresses(cfg: AppConfig, *, force_scan: bool) -> tuple[int, ...]:
+    if cfg.rs485_address is not None:
+        return (cfg.rs485_address,)
+
+    if cfg.auto_scan_rs485 or force_scan:
+        return cfg.auto_rs485_addresses
+
+    return ()
+
+
+def discover_devices_for_config(
+    cfg: AppConfig,
+    *,
+    force_rs485_scan: bool = False,
+) -> list[DetectedDevice]:
+    port_names = None if cfg.serial_port == "auto" else (cfg.serial_port,)
+    return discover_gp350_devices(
+        port_names=port_names,
+        include_module_types=discovery_module_types(cfg),
+        rs485_addresses=discovery_rs485_addresses(cfg, force_scan=force_rs485_scan),
+        timeout=cfg.auto_probe_timeout,
+    )
+
+
+def config_with_detected_device(
+    cfg: AppConfig,
+    detected: DetectedDevice,
+) -> AppConfig:
+    return replace(
+        cfg,
+        module_type=detected.module_type,
+        serial_port=detected.port,
+        baudrate=detected.baudrate,
+        bytesize=detected.bytesize,
+        parity=detected.parity,
+        stopbits=detected.stopbits,
+        line_terminator=detected.line_terminator,
+        rs485_address=detected.rs485_address,
+        command=detected.command,
+    )
+
+
+def resolve_detected_config(
+    cfg: AppConfig,
+    *,
+    device_index_override: int | None = None,
+    force_rs485_scan: bool = False,
+) -> AppConfig:
+    if not cfg.needs_device_detection:
+        return cfg
+
+    devices = discover_devices_for_config(cfg, force_rs485_scan=force_rs485_scan)
+    selected_index = (
+        cfg.auto_device_index
+        if device_index_override is None
+        else device_index_override
+    )
+    selected = select_gp350_device(devices, selected_index)
+    return config_with_detected_device(cfg, selected)
+
+
+def print_discovered_devices(devices: list[DetectedDevice]) -> None:
+    if not devices:
+        print("Nie wykryto GP350.")
+        return
+
+    for index, device in enumerate(devices):
+        address = (
+            "" if device.rs485_address is None else f" address={device.rs485_address}"
+        )
+        print(
+            f"[{index}] type={device.device_type} module={device.module_type} "
+            f"port={device.port}{address} baudrate={device.baudrate} "
+            f"confidence={device.confidence:.2f} raw={device.raw_response!r}"
+        )
 
 
 def build_influx_config(cfg: AppConfig) -> InfluxConfig:
@@ -133,6 +239,24 @@ def main() -> None:
     cfg = load_config_or_exit(args.config, args.port)
     setup_logging(cfg)
 
+    if args.discover:
+        devices = discover_devices_for_config(
+            cfg,
+            force_rs485_scan=args.scan_rs485,
+        )
+        print_discovered_devices(devices)
+        return
+
+    try:
+        cfg = resolve_detected_config(
+            cfg,
+            device_index_override=args.auto_device_index,
+            force_rs485_scan=args.scan_rs485,
+        )
+    except DeviceDiscoveryError as error:
+        logging.critical("Autodetekcja nieudana: %s", error)
+        raise SystemExit(1) from None
+
     last_config_modified = os.path.getmtime(cfg.path) if os.path.exists(cfg.path) else 0
     counters: Counter[str] = Counter()
     consecutive_errors = 0
@@ -180,6 +304,11 @@ def main() -> None:
                         cfg.path,
                         serial_port_override=args.port,
                     )
+                    new_cfg = resolve_detected_config(
+                        new_cfg,
+                        device_index_override=args.auto_device_index,
+                        force_rs485_scan=args.scan_rs485,
+                    )
                     setup_logging(new_cfg)
                     logging.info("Konfiguracja przeładowana")
 
@@ -211,7 +340,11 @@ def main() -> None:
                         client = open_client(new_cfg)
 
                     cfg = new_cfg
-                except (ConfigValidationError, serial.SerialException) as error:
+                except (
+                    ConfigValidationError,
+                    DeviceDiscoveryError,
+                    serial.SerialException,
+                ) as error:
                     logging.error(
                         "Nowa konfiguracja niepoprawna, zostawiam starą: %s",
                         error,

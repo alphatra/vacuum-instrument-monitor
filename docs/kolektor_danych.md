@@ -20,6 +20,7 @@ flowchart LR
 Komenda zależy od `module_type`:
 
 ```text
+module_type = auto    -> autodetekcja: digital albo rs232
 module_type = rs232   -> DS IG
 module_type = digital -> RD
 ```
@@ -61,8 +62,8 @@ sequenceDiagram
 
 ```ini
 [Connection]
-module_type = digital
-serial_port = /dev/ttys005
+module_type = auto
+serial_port = auto
 baudrate = 9600
 bytesize = 8
 parity = none
@@ -71,6 +72,12 @@ line_terminator = cr
 rs485_address =
 timeout = 1.0
 write_timeout = 1.0
+
+[Detection]
+device_index = 0
+probe_timeout = 0.35
+scan_rs485 = false
+rs485_addresses = 0-31
 ```
 
 Manual GP350 dopuszcza:
@@ -86,6 +93,9 @@ Digital Interface fabrycznie: `9600`, `8`, `none`, `1`, terminator `CR`.
 
 Jeśli usuniesz `baudrate`, `bytesize`, `parity`, `stopbits` albo `command`,
 kolektor dobierze wartości z `module_type`.
+
+Jeśli ustawisz `module_type = auto` i `serial_port = auto`, kolektor najpierw
+wykona autodetekcję. Szczegóły: `docs/autodetekcja_urzadzen.md`.
 
 RS-485:
 

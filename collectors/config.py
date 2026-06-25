@@ -51,6 +51,10 @@ class AppConfig:
     timeout: float = 1.0
     write_timeout: float = 1.0
     command: str = "RD"
+    auto_device_index: int = 0
+    auto_probe_timeout: float = 0.35
+    auto_scan_rs485: bool = False
+    auto_rs485_addresses: tuple[int, ...] = tuple(range(32))
     interval_seconds: float = 1.0
     device_name: str = "GP350_1"
     channel: str = "IG1"
@@ -87,7 +91,9 @@ class AppConfig:
                 "Connection",
                 "serial_port",
                 fallback=defaults.serial_port,
-            )
+            ).strip()
+            if serial_port.lower() == "auto":
+                serial_port = "auto"
             if serial_port_override:
                 serial_port = serial_port_override
 
@@ -95,13 +101,15 @@ class AppConfig:
                 "Connection",
                 "module_type",
                 fallback=defaults.module_type,
-            ).lower()
-            if module_type not in MODULE_DEFAULTS:
+            ).strip().lower()
+            if module_type not in {*MODULE_DEFAULTS, "auto"}:
                 raise ConfigValidationError(
-                    "module_type musi mieć wartość rs232 albo digital"
+                    "module_type musi mieć wartość auto, rs232 albo digital"
                 )
 
-            module_defaults = MODULE_DEFAULTS[module_type]
+            module_defaults = MODULE_DEFAULTS[
+                "digital" if module_type == "auto" else module_type
+            ]
             rs485_address = cls._read_optional_int(
                 config,
                 "Connection",
@@ -157,6 +165,25 @@ class AppConfig:
                     "command",
                     fallback=str(module_defaults["command"]),
                 ).strip(),
+                auto_device_index=config.getint(
+                    "Detection",
+                    "device_index",
+                    fallback=defaults.auto_device_index,
+                ),
+                auto_probe_timeout=config.getfloat(
+                    "Detection",
+                    "probe_timeout",
+                    fallback=defaults.auto_probe_timeout,
+                ),
+                auto_scan_rs485=config.getboolean(
+                    "Detection",
+                    "scan_rs485",
+                    fallback=defaults.auto_scan_rs485,
+                ),
+                auto_rs485_addresses=cls._read_address_list(
+                    config,
+                    fallback=defaults.auto_rs485_addresses,
+                ),
                 interval_seconds=config.getfloat(
                     "Collector",
                     "interval_seconds",
@@ -284,16 +311,50 @@ class AppConfig:
 
         return TERMINATOR_ALIASES[normalized]
 
+    @staticmethod
+    def _read_address_list(
+        config: configparser.ConfigParser,
+        *,
+        fallback: tuple[int, ...],
+    ) -> tuple[int, ...]:
+        raw_value = config.get(
+            "Detection",
+            "rs485_addresses",
+            fallback="",
+        ).strip()
+
+        if not raw_value:
+            return fallback
+
+        addresses: set[int] = set()
+        for part in raw_value.replace(" ", "").split(","):
+            if not part:
+                continue
+
+            if "-" in part:
+                start_text, end_text = part.split("-", maxsplit=1)
+                start = int(start_text)
+                end = int(end_text)
+                if start > end:
+                    raise ConfigValidationError(
+                        "rs485_addresses ma zakres od większej do mniejszej wartości"
+                    )
+                addresses.update(range(start, end + 1))
+            else:
+                addresses.add(int(part))
+
+        return tuple(sorted(addresses))
+
     def validate(self) -> None:
         if not self.serial_port:
             raise ConfigValidationError(
                 "Nie podano serial_port. "
-                "Ustaw go w config/config.ini albo przez --port."
+                "Ustaw go w config/config.ini, wpisz auto albo użyj --port."
             )
 
-        if self.module_type not in MODULE_DEFAULTS:
+        if self.module_type not in {*MODULE_DEFAULTS, "auto"}:
             raise ConfigValidationError(
-                "module_type musi mieć wartość rs232 albo digital"
+                "module_type musi mieć wartość auto, rs232 albo digital"
             )
 
         valid_baudrates = {75, 150, 300, 600, 1200, 2400, 4800, 9600, 19200}
@@ -322,9 +383,23 @@ class AppConfig:
                 "rs485_address musi być puste albo w zakresie 0-31"
             )
 
-        if self.rs485_address is not None and self.module_type != "digital":
+        if self.rs485_address is not None and self.module_type not in {
+            "auto",
+            "digital",
+        }:
             raise ConfigValidationError(
                 "rs485_address działa tylko dla module_type=digital"
+            )
+
+        if self.auto_device_index < 0:
+            raise ConfigValidationError("Detection.device_index nie może być ujemny")
+
+        if self.auto_probe_timeout <= 0:
+            raise ConfigValidationError("Detection.probe_timeout musi być dodatni")
+
+        if any(address < 0 or address > 31 for address in self.auto_rs485_addresses):
+            raise ConfigValidationError(
+                "Detection.rs485_addresses musi zawierać adresy 0-31"
             )
 
         if self.timeout <= 0:
@@ -400,6 +475,10 @@ class AppConfig:
             return ""
 
         return os.environ.get(self.influx_token_env, "")
+
+    @property
+    def needs_device_detection(self) -> bool:
+        return self.serial_port == "auto" or self.module_type == "auto"
 
     def has_changed(self, last_modified_time: float) -> tuple[bool, float]:
         try:

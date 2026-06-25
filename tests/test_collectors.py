@@ -4,7 +4,8 @@ import pytest
 
 from collectors.config import AppConfig, ConfigValidationError
 from collectors.csv_writer import CSV_HEADER, CsvWriter, MeasurementRecord
-from collectors.gp350_collector import build_serial_command
+from collectors.device_discovery import DetectedDevice
+from collectors.gp350_collector import build_serial_command, resolve_detected_config
 from collectors.serial_client import SerialClient
 from simulators.enums import ParsedQuality
 from simulators.parser import GP350Reading
@@ -32,6 +33,12 @@ write_timeout = 3.5
 [Collector]
 command = DS IG
 interval_seconds = 0.5
+
+[Detection]
+device_index = 1
+probe_timeout = 0.25
+scan_rs485 = true
+rs485_addresses = 1,3-4
 
 [Device]
 device_name = GP350_TEST
@@ -71,6 +78,10 @@ fail_on_error = true
     assert cfg.timeout == 2.5
     assert cfg.write_timeout == 3.5
     assert cfg.command == "DS IG"
+    assert cfg.auto_device_index == 1
+    assert cfg.auto_probe_timeout == 0.25
+    assert cfg.auto_scan_rs485 is True
+    assert cfg.auto_rs485_addresses == (1, 3, 4)
     assert cfg.interval_seconds == 0.5
     assert cfg.device_name == "GP350_TEST"
     assert cfg.channel == "IG2"
@@ -175,6 +186,24 @@ serial_port = /dev/tty.test
     assert cfg.command == "RD"
 
 
+def test_config_allows_auto_detection(tmp_path) -> None:
+    config_path = tmp_path / "config.ini"
+    config_path.write_text(
+        """
+[Connection]
+module_type = auto
+serial_port = auto
+""",
+        encoding="utf-8",
+    )
+
+    cfg = AppConfig.from_file(str(config_path))
+
+    assert cfg.module_type == "auto"
+    assert cfg.serial_port == "auto"
+    assert cfg.needs_device_detection is True
+
+
 def test_config_rejects_rs485_address_for_rs232(tmp_path) -> None:
     config_path = tmp_path / "config.ini"
     config_path.write_text(
@@ -216,6 +245,37 @@ def test_build_serial_command_adds_rs485_address() -> None:
     )
 
     assert build_serial_command(cfg) == "#01RD"
+
+
+def test_resolve_detected_config_copies_probe_settings(monkeypatch) -> None:
+    detected = DetectedDevice(
+        device_type="gp350",
+        port="/dev/cu.usbserial-A",
+        module_type="rs232",
+        baudrate=300,
+        bytesize=7,
+        parity="none",
+        stopbits=2.0,
+        line_terminator="\r\n",
+        command="DS IG",
+        rs485_address=None,
+        raw_response="1.23E-06",
+        confidence=1.0,
+    )
+
+    monkeypatch.setattr(
+        "collectors.gp350_collector.discover_gp350_devices",
+        lambda **_: [detected],
+    )
+
+    cfg = AppConfig(module_type="auto", serial_port="auto")
+    resolved = resolve_detected_config(cfg)
+
+    assert resolved.module_type == "rs232"
+    assert resolved.serial_port == "/dev/cu.usbserial-A"
+    assert resolved.baudrate == 300
+    assert resolved.bytesize == 7
+    assert resolved.command == "DS IG"
 
 
 def test_config_port_override_allows_missing_port(tmp_path) -> None:

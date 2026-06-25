@@ -1,0 +1,28 @@
+[Unit]
+Description=Vacuum monitor collector (%i)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=vacuum-monitor
+Group=vacuum-monitor
+SupplementaryGroups=dialout
+WorkingDirectory=/opt/vacuum-instrument-monitor
+Environment=APP_DIR=/opt/vacuum-instrument-monitor
+Environment=PYTHON_VERSION=3.13
+EnvironmentFile=-/etc/vacuum-monitor/collector.env
+EnvironmentFile=-/etc/vacuum-monitor/%i.env
+ExecStart=/opt/vacuum-instrument-monitor/scripts/run_collector_linux.sh /etc/vacuum-monitor/%i.ini
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/vacuum-instrument-monitor/data /opt/vacuum-instrument-monitor/logs /etc/vacuum-monitor
+
+[Install]
+WantedBy=multi-user.target

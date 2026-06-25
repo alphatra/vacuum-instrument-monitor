@@ -11,3 +11,7 @@ build/
 *.egg-info/
 data/*.csv
 logs/*.log
+.env
+*.env
+config/*.local.ini
+config/secrets*.ini
