@@ -1,0 +1,22 @@
+name: Deploy Raspberry Pi
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-meterdevicepi
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on:
+      - self-hosted
+      - linux
+      - ARM64
+      - meterdevicepi
+    steps:
+      - name: Deploy on Raspberry Pi
+        run: sudo /usr/local/sbin/vacuum-monitor-deploy
