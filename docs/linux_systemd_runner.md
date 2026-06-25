@@ -27,7 +27,7 @@ InfluxDB. Grafana czyta InfluxDB.
 
 ## Runtime
 
-Używamy CPython 3.13 przez `uv`.
+Najprostszy runtime: CPython 3.11+ przez `uv` albo gotowa binarka PyInstaller.
 
 Dlaczego nie Cython/PyPy:
 
@@ -35,11 +35,19 @@ Dlaczego nie Cython/PyPy:
 - proces działa długo, więc koszt startu Pythona nie ma znaczenia,
 - największy zysk daje stabilny daemon i `systemd`, nie kompilowanie kodu.
 
+Najlżejszy wariant na produkcji: zbudować binarkę PyInstaller na Linux/RPi i
+odpalać ją przez `systemd`. Wtedy na docelowym systemie nie potrzeba `uv`, `pip`
+ani `.venv`.
+
 ## Pliki
 
 - `scripts/run_collector_linux.sh` - uruchamia kolektor z absolutną ścieżką do configu.
+- `scripts/build_linux_binary.sh` - buduje binarkę PyInstaller na Linux.
+- `scripts/run_collector_binary_linux.sh` - odpala gotową binarkę.
 - `systemd/vacuum-monitor-collector@.service` - autostart/restart.
+- `systemd/vacuum-monitor-collector-binary@.service` - autostart dla binarki.
 - `scripts/install_linux_service.sh` - instaluje usługę.
+- `scripts/install_linux_binary_service.sh` - buduje binarkę i instaluje usługę.
 - `config/examples/gp350-1.ini` - pierwszy GP350.
 - `config/examples/gp350-2.ini` - drugi GP350.
 - `config/examples/collector.env.example` - token InfluxDB.
@@ -75,7 +83,7 @@ Wpisz:
 ```bash
 INFLUXDB_TOKEN=twój_token_write_do_influxdb
 UV_BIN=/usr/local/bin/uv
-PYTHON_VERSION=3.13
+PYTHON_VERSION=3.11
 ```
 
 Configi:
@@ -112,6 +120,8 @@ Potem start jednego kolektora:
 ```
 
 ## Autostart systemd
+
+Wariant z Python/uv:
 
 Pierwszy GP350:
 
@@ -151,6 +161,92 @@ Wyłączenie autostartu:
 sudo systemctl disable --now vacuum-monitor-collector@gp350-1.service
 ```
 
+## Binarka PyInstaller
+
+Build musi powstać na tym samym typie Linuxa, na którym ma działać:
+
+- Raspberry Pi 64-bit -> buduj na ARM64 Linux/Raspberry Pi.
+- Raspberry Pi 32-bit -> buduj na armhf/ARMv7.
+- x86_64 serwer -> buduj na x86_64 Linux.
+
+Build onefile:
+
+```bash
+cd /opt/vacuum-instrument-monitor
+scripts/build_linux_binary.sh --onefile --install /opt/vacuum-instrument-monitor/bin
+```
+
+Efekt:
+
+```text
+/opt/vacuum-instrument-monitor/bin/vacuum-collector
+```
+
+Test:
+
+```bash
+/opt/vacuum-instrument-monitor/bin/vacuum-collector \
+  --config /etc/vacuum-monitor/gp350-1.ini \
+  --discover
+```
+
+Autostart z binarki:
+
+```bash
+sudo /opt/vacuum-instrument-monitor/scripts/install_linux_binary_service.sh gp350-1
+sudo /opt/vacuum-instrument-monitor/scripts/install_linux_binary_service.sh gp350-2
+```
+
+Logi:
+
+```bash
+journalctl -u vacuum-monitor-collector-binary@gp350-1.service -f
+```
+
+Status:
+
+```bash
+systemctl status vacuum-monitor-collector-binary@gp350-1.service
+```
+
+Restart:
+
+```bash
+sudo systemctl restart vacuum-monitor-collector-binary@gp350-1.service
+```
+
+`onefile` łatwo kopiować, ale startuje trochę wolniej. `onedir` startuje
+szybciej, ale ma katalog z plikami:
+
+```bash
+scripts/build_linux_binary.sh --onedir --install /opt/vacuum-instrument-monitor/bin
+```
+
+## Automatyczny build na GitHub
+
+Workflow:
+
+```text
+.github/workflows/build-linux-binary.yml
+```
+
+Co robi:
+
+- `workflow_dispatch` buduje ręcznie po kliknięciu w GitHub Actions,
+- tag `v*` buduje automatycznie release artifact,
+- x86_64 buduje na `ubuntu-24.04`,
+- ARM64 buduje na self-hosted runner z label `meterdevicepi`.
+
+Ważne: binarka ARM64 dla Raspberry Pi musi powstać na ARM64 Linux. Artifact z
+`ubuntu-24.04` działa na x86_64, nie na Raspberry Pi.
+
+Jeśli `/tmp` ma `noexec`, `--onefile` może nie ruszyć, bo PyInstaller rozpakowuje
+się do katalogu tymczasowego. Wtedy użyj:
+
+```bash
+scripts/build_linux_binary.sh --onedir --install /opt/vacuum-instrument-monitor/bin
+```
+
 ## Zewnętrzna Grafana
 
 Grafana musi mieć datasource do tego samego InfluxDB:
@@ -175,7 +271,7 @@ sequenceDiagram
 
     Boot->>Systemd: multi-user.target
     Systemd->>Runner: start service instance
-    Runner->>Collector: uv run gp350-collector
+    Runner->>Collector: python -m collector albo binarka
     Collector->>GP350: autodetection RD / DS IG
     GP350-->>Collector: pressure response
     loop co interval_seconds

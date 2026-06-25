@@ -5,9 +5,11 @@ __pycache__/
 .ruff_cache/
 .pyrefly/
 .venv/
+.build-venv/
 .idea/
 dist/
 build/
+bin/
 *.egg-info/
 data/*.csv
 logs/*.log

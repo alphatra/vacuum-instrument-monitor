@@ -1,0 +1,61 @@
+name: Build Linux Binary
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: PyInstaller mode
+        type: choice
+        options:
+          - onefile
+          - onedir
+        default: onefile
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-x86_64:
+    name: Build Linux x86_64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Build binary
+        run: |
+          MODE="${{ inputs.mode || 'onefile' }}" \
+            scripts/build_linux_binary.sh
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vacuum-collector-linux-x86_64
+          path: dist/**
+
+  build-arm64-self-hosted:
+    name: Build Linux ARM64 on Pi runner
+    runs-on:
+      - self-hosted
+      - Linux
+      - ARM64
+      - meterdevicepi
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv if missing
+        run: |
+          if ! command -v uv >/dev/null 2>&1; then
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+      - name: Build binary
+        run: |
+          MODE="${{ inputs.mode || 'onefile' }}" \
+            scripts/build_linux_binary.sh
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vacuum-collector-linux-arm64
+          path: dist/**

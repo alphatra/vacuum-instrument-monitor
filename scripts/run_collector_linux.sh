@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/vacuum-instrument-monitor}"
-PYTHON_VERSION="${PYTHON_VERSION:-3.13}"
+PYTHON_VERSION="${PYTHON_VERSION:-3.11}"
 UV_BIN="${UV_BIN:-}"
 
 if [ "$#" -lt 1 ]; then
