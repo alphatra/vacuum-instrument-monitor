@@ -1,0 +1,12 @@
+project_includes = ["**/*"]
+project_excludes = [
+    "**/.venv/**",
+    "**/__pycache__/**",
+    "**/.pytest_cache/**",
+    "**/.ruff_cache/**",
+]
+
+[errors]
+bad-return = true
+missing-attribute = true
+unsupported-operation = true

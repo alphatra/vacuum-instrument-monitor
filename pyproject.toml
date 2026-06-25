@@ -1,0 +1,25 @@
+[project]
+name = "vacuum-instrument-monitor"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "pyrefly==1.1.1",
+    "pyserial>=3.5",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "ruff>=0.14.9",
+    "types-pyserial>=3.5.0.20260519",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

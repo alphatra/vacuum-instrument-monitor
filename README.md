@@ -1,0 +1,104 @@
+# Vacuum Instrument Monitor
+
+Python toolkit for collecting serial data from vacuum instruments, storing
+readings in CSV or InfluxDB, and preparing live Grafana dashboards.
+
+The first supported device profile is Granville-Phillips 350. The project name
+is intentionally wider than GP350, so more instruments can be added later
+without renaming the repository.
+
+## Setup
+
+```bash
+uv sync --dev
+```
+
+## Sample Output
+
+```bash
+uv run python main.py --samples 5 --interval 0 --command "DS IG"
+```
+
+Useful options:
+
+- `--seed` controls repeatable random output.
+- `--samples` sets sample count and must be at least `1`.
+- `--interval` sets delay between samples and must not be negative.
+- `--command` chooses command sent to the simulator.
+
+## Virtual Serial Device
+
+Start the simulator:
+
+```bash
+uv run python virtual_gp350.py
+```
+
+It prints a pseudo-terminal path, for example `/dev/ttys005`. Use that path
+from another terminal:
+
+```bash
+uv run python serial_terminal.py /dev/ttys005
+```
+
+For old RS-232 Module defaults:
+
+```bash
+uv run python serial_terminal.py /dev/cu.usbserial-XXXX --baudrate 300 --bytesize 7 --parity none --stopbits 2 --line-terminator crlf
+```
+
+For Digital Interface RS-485 address `1`:
+
+```bash
+uv run python serial_terminal.py /dev/cu.usbserial-XXXX --address 1 --line-terminator cr
+```
+
+Use `--verbose` with `virtual_gp350.py` to print raw serial bytes while
+debugging.
+
+## Current GP350 Commands
+
+- `DS IG` returns RS-232 pressure, e.g. `1.20E-07`.
+- `DG ON` / `DG OFF` controls degas and returns `OK` or `INVALID`.
+  At high pressure `DG ON` can return `OK` while `DGS` still reports off.
+- `DGS` returns degas status: `1` or `0`.
+- `IG1 ON` / `IG1 OFF` controls filament 1.
+- `IG2 ON` / `IG2 OFF` controls filament 2.
+- `RD` returns Digital Interface pressure.
+- `IGB` returns filament status.
+- `F1 1` / `F1 0` and `F2 1` / `F2 0` control digital filaments.
+  Responses use GP350 shape, e.g. `11G1 ON`.
+- `PC` supports basic modifiers: `S`, `B`, `1-4`, and setpoint programming.
+
+## Development
+
+Run checks:
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run pyrefly check
+```
+
+## Documentation
+
+Polish project walkthrough with diagrams:
+[docs/dzialanie.md](docs/dzialanie.md)
+
+Collector design plan in Polish:
+[docs/kolektor_danych.md](docs/kolektor_danych.md)
+
+Collector configuration scenarios:
+[docs/scenariusze_konfiguracji.md](docs/scenariusze_konfiguracji.md)
+
+Real GP350 wiring and DIP switch checklist:
+[docs/podlaczenie_gp350.md](docs/podlaczenie_gp350.md)
+
+InfluxDB + Grafana setup:
+[docs/influxdb_grafana.md](docs/influxdb_grafana.md)
+
+Run collector:
+
+```bash
+uv run python -m collectors.gp350_collector --port /dev/ttys005
+```
