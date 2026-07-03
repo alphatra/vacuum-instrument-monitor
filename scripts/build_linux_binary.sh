@@ -86,6 +86,7 @@ PYINSTALLER_ARGS=(
   --paths "$APP_DIR"
   --collect-submodules serial
   --collect-submodules collectors
+  --collect-submodules devices
   --collect-submodules simulators
   collectors/gp350_collector.py
 )
@@ -127,6 +128,10 @@ if [ ! -x "$ARTIFACT" ]; then
 fi
 
 "$ARTIFACT" --help >/dev/null
+echo "Architecture: $(uname -m)"
+if command -v file >/dev/null 2>&1; then
+  file "$ARTIFACT"
+fi
 
 if [ -n "$INSTALL_DIR" ]; then
   mkdir -p "$INSTALL_DIR"

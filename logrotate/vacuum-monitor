@@ -1,0 +1,10 @@
+/opt/vacuum-instrument-monitor/logs/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su vacuum-monitor vacuum-monitor
+}

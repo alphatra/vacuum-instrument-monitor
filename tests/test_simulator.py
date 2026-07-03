@@ -1,5 +1,6 @@
 from simulators.enums import CommunicationQuality, GaugeStatus, SimulationScenario
 from simulators.gp350_generator import GP350Parser, GP350Simulator
+from simulators.vgc402_simulator import VGC402Simulator
 
 
 def test_ds_ig_returns_pressure_without_unit_or_status() -> None:
@@ -166,3 +167,23 @@ def test_undocumented_aliases_are_rejected() -> None:
 
     assert sim.handle_command("#01PCS") == "? SYNTX ER"
     assert sim.handle_command("#01IGS") == "? SYNTX ER"
+
+
+def test_vgc402_simulator_supports_manual_read_commands() -> None:
+    sim = VGC402Simulator(
+        unit="micron",
+        pressure_torr_ch1=1.0,
+        pressure_torr_ch2=2.0,
+    )
+
+    assert sim.handle_command("UNI").data == "3"
+    assert sim.handle_command("PR1").data == "0,1.0000E+03"
+    assert sim.handle_command("PR2").data == "0,2.0000E+03"
+    assert sim.handle_command("PRX").data == "0,1.0000E+03,0,2.0000E+03"
+
+
+def test_vgc402_simulator_returns_nak_error_for_unknown_command() -> None:
+    result = VGC402Simulator().handle_command("NOPE")
+
+    assert result.accepted is False
+    assert result.data == "0001"

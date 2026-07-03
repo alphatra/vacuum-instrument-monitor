@@ -3,9 +3,13 @@
 Python toolkit for collecting serial data from vacuum instruments, storing
 readings in CSV or InfluxDB, and preparing live Grafana dashboards.
 
-The first supported device profile is Granville-Phillips 350. The project name
-is intentionally wider than GP350, so more instruments can be added later
-without renaming the repository.
+Supported device profiles:
+
+- Granville-Phillips 350 (`gp350`)
+- INFICON VGC402 (`inficon_vgc402`)
+
+The project name is intentionally wider than one controller, so more instruments
+can be added later without renaming the repository.
 
 ## Setup
 
@@ -56,9 +60,18 @@ uv run python serial_terminal.py /dev/cu.usbserial-XXXX --address 1 --line-termi
 Use `--verbose` with `virtual_gp350.py` to print raw serial bytes while
 debugging.
 
+Virtual VGC402:
+
+```bash
+uv run python virtual_vgc402.py --unit micron
+uv run python -m collectors.gp350_collector \
+  --config config/examples/vgc402.ini \
+  --port /dev/ttys005
+```
+
 ## Device Discovery
 
-Scan connected serial adapters for GP350 controllers:
+Scan connected serial adapters for supported controllers:
 
 ```bash
 uv run python -m collectors.gp350_collector --discover
@@ -70,15 +83,27 @@ Run collector with automatic port and module detection:
 uv run python -m collectors.gp350_collector
 ```
 
-When two GP350 controllers are connected, run two collector processes with
-separate configs or choose detected index:
+When two controllers are connected, run two collector processes with separate
+configs or choose detected index:
 
 ```bash
 uv run python -m collectors.gp350_collector --auto-device-index 0
 uv run python -m collectors.gp350_collector --auto-device-index 1
 ```
 
-## Current GP350 Commands
+## Current Device Commands
+
+INFICON VGC402:
+
+- `PR1` reads channel 1.
+- `PR2` reads channel 2.
+- `PRX` reads all channels and writes one record per channel.
+- `UNI` is used when `pressure_unit = auto` to read the display unit.
+- Protocol uses `command -> ACK -> ENQ -> data`, for example `0,1.23E-06`.
+- Supported baudrates: `9600`, `19200`, `38400`.
+- Supported units: `Torr`, `mbar`, `bar`, `Pa`, `micron`; stored as `Torr`.
+
+GP350:
 
 - `DS IG` returns RS-232 pressure, e.g. `1.20E-07`.
 - `DG ON` / `DG OFF` controls degas and returns `OK` or `INVALID`.
@@ -122,8 +147,20 @@ InfluxDB + Grafana setup:
 Automatic serial device discovery:
 [docs/autodetekcja_urzadzen.md](docs/autodetekcja_urzadzen.md)
 
+Device profile layer:
+[docs/warstwa_urzadzen.md](docs/warstwa_urzadzen.md)
+
 Linux runner, systemd autostart, external InfluxDB/Grafana:
 [docs/linux_systemd_runner.md](docs/linux_systemd_runner.md)
+
+Acceptance tests:
+[docs/acceptance_tests.md](docs/acceptance_tests.md)
+
+Grafana dashboard:
+[grafana/vacuum-dashboard.json](grafana/vacuum-dashboard.json)
+
+Grafana alert rules:
+[grafana/alert-rules.md](grafana/alert-rules.md)
 
 Run collector:
 

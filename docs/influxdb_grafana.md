@@ -5,7 +5,7 @@ InfluxDB i rysuje wykresy.
 
 ```mermaid
 flowchart LR
-    GP350["GP350"] --> Collector["gp350_collector.py"]
+    Device["GP350 / VGC402"] --> Collector["gp350_collector.py"]
     Collector --> CSV["CSV backup"]
     Collector --> Influx["InfluxDB bucket"]
     Influx --> Grafana["Grafana dashboard"]
@@ -16,7 +16,7 @@ flowchart LR
 W InfluxDB v2 utwórz:
 
 - organization, np. `lab`
-- bucket, np. `gp350`
+- bucket, np. `vacuum`
 - API token z prawem write do bucketu
 
 Token najlepiej trzymać w env:
@@ -34,10 +34,10 @@ W `config/config.ini`:
 enabled = true
 url = http://localhost:8086
 org = lab
-bucket = gp350
+bucket = vacuum
 token =
 token_env = INFLUXDB_TOKEN
-measurement = gp350_reading
+measurement = vacuum_pressure
 timeout = 2.0
 retries = 1
 fail_on_error = false
@@ -51,7 +51,7 @@ zapisuje CSV i loguje błąd InfluxDB.
 Measurement:
 
 ```text
-gp350_reading
+vacuum_pressure
 ```
 
 Tagi:
@@ -59,6 +59,7 @@ Tagi:
 - `device`
 - `channel`
 - `quality`
+- `device_type`
 - `module_type`
 - `command`
 
@@ -69,11 +70,12 @@ Fields:
 - `raw_response`
 - `is_good`
 - `unit`
+- `gauge_status`
 
 Przykładowy line protocol:
 
 ```text
-gp350_reading,device=GP350_1,channel=IG1,quality=good,module_type=digital,command=RD pressure_torr=1.23e-06,latency_ms=12.346,raw_response="1.23E-06",is_good=true,unit="Torr" 1782302400000000000
+vacuum_pressure,device=GP350_1,channel=IG1,quality=good,device_type=gp350,module_type=digital,command=RD pressure_torr=1.23e-06,latency_ms=12.346,raw_response="1.23E-06",is_good=true,unit="Torr" 1782302400000000000
 ```
 
 ## 4. Grafana query
@@ -81,9 +83,9 @@ gp350_reading,device=GP350_1,channel=IG1,quality=good,module_type=digital,comman
 Panel ciśnienia:
 
 ```flux
-from(bucket: "gp350")
+from(bucket: "vacuum")
   |> range(start: -6h)
-  |> filter(fn: (r) => r._measurement == "gp350_reading")
+  |> filter(fn: (r) => r._measurement == "vacuum_pressure")
   |> filter(fn: (r) => r._field == "pressure_torr")
   |> filter(fn: (r) => r.quality == "good")
 ```
@@ -91,30 +93,57 @@ from(bucket: "gp350")
 Panel latency:
 
 ```flux
-from(bucket: "gp350")
+from(bucket: "vacuum")
   |> range(start: -6h)
-  |> filter(fn: (r) => r._measurement == "gp350_reading")
+  |> filter(fn: (r) => r._measurement == "vacuum_pressure")
   |> filter(fn: (r) => r._field == "latency_ms")
 ```
 
 Panel błędów:
 
 ```flux
-from(bucket: "gp350")
+from(bucket: "vacuum")
   |> range(start: -6h)
-  |> filter(fn: (r) => r._measurement == "gp350_reading")
+  |> filter(fn: (r) => r._measurement == "vacuum_pressure")
   |> filter(fn: (r) => r._field == "is_good")
   |> filter(fn: (r) => r._value == false)
 ```
 
 ## 5. Grafana panele
 
-Prosty dashboard:
+Gotowy dashboard:
+
+```text
+grafana/vacuum-dashboard.json
+```
+
+Import:
+
+1. Grafana Cloud -> Dashboards -> New -> Import.
+2. Wgraj `grafana/vacuum-dashboard.json`.
+3. Wybierz datasource InfluxDB.
+4. Ustaw zmienną `bucket`, domyślnie `vacuum`.
+5. Ustaw zmienną `measurement`, domyślnie `vacuum_pressure`.
+
+Panele w dashboardzie:
 
 - `Pressure Torr` - time series, field `pressure_torr`, skala logarytmiczna.
 - `Latency ms` - time series, field `latency_ms`.
 - `Quality` - stat/table po tagu `quality`.
 - `Raw response` - table z `raw_response` do debugowania.
+
+Alerty:
+
+```text
+grafana/alert-rules.md
+```
+
+Zawiera gotowe Flux query dla:
+
+- brak danych z kolektora,
+- `quality != good`,
+- `sensor_off`,
+- `bpg_bcg_hpg_error`.
 
 ## 6. Troubleshooting
 

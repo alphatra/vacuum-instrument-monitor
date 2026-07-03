@@ -8,6 +8,8 @@ CONFIG_DIR="${CONFIG_DIR:-/etc/vacuum-monitor}"
 UNIT_SRC="$APP_DIR/systemd/vacuum-monitor-collector@.service"
 UNIT_DST="/etc/systemd/system/vacuum-monitor-collector@.service"
 EXAMPLE_CONFIG="$APP_DIR/config/examples/${INSTANCE}.ini"
+LOGROTATE_SRC="$APP_DIR/logrotate/vacuum-monitor"
+LOGROTATE_DST="/etc/logrotate.d/vacuum-monitor"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run as root: sudo $0 ${INSTANCE}" >&2
@@ -32,6 +34,10 @@ install -d -m 0755 "$CONFIG_DIR"
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0755 "$APP_DIR/data" "$APP_DIR/logs"
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"
 
+if [ -f "$LOGROTATE_SRC" ]; then
+  install -m 0644 "$LOGROTATE_SRC" "$LOGROTATE_DST"
+fi
+
 if [ ! -f "$CONFIG_DIR/collector.env" ]; then
   if [ -f "$APP_DIR/config/examples/collector.env.example" ]; then
     install -m 0600 "$APP_DIR/config/examples/collector.env.example" \
@@ -55,3 +61,4 @@ echo "Installed: vacuum-monitor-collector@${INSTANCE}.service"
 echo "Config:    $CONFIG_DIR/${INSTANCE}.ini"
 echo "Env:       $CONFIG_DIR/collector.env"
 echo "Logs:      journalctl -u vacuum-monitor-collector@${INSTANCE}.service -f"
+echo "Logrotate: $LOGROTATE_DST"

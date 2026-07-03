@@ -6,8 +6,11 @@ import pytest
 from collectors.device_discovery import (
     DeviceDiscoveryError,
     discover_gp350_devices,
+    discover_inficon_vgc402_devices,
+    discover_serial_devices,
     select_gp350_device,
 )
+from collectors.vgc402 import ACK, ENQ
 
 
 @dataclass(frozen=True)
@@ -119,6 +122,60 @@ def test_discover_gp350_devices_ignores_unknown_responses() -> None:
     )
 
     assert devices == []
+
+
+def test_discover_inficon_vgc402_devices_detects_ack_enq_protocol() -> None:
+    FakeSerial.responses = {
+        ("/dev/cu.usbserial-VGC", 9600, b"PR1\r\n"): f"{ACK}\r\n".encode("ascii"),
+        ("/dev/cu.usbserial-VGC", 9600, ENQ): b"0,1.23E-06\r\n",
+    }
+
+    devices = discover_inficon_vgc402_devices(
+        port_names=["/dev/cu.usbserial-VGC"],
+        serial_factory=FakeSerial,
+        settle_delay=0,
+    )
+
+    assert len(devices) == 1
+    assert devices[0].device_type == "inficon_vgc402"
+    assert devices[0].module_type == "serial"
+    assert devices[0].command == "PR1"
+    assert devices[0].raw_response == "0,1.23E-06"
+
+
+def test_discover_inficon_vgc402_devices_scans_all_manual_baudrates() -> None:
+    FakeSerial.responses = {
+        ("/dev/cu.usbserial-VGC", 38400, b"PR1\r\n"): f"{ACK}\r\n".encode(
+            "ascii"
+        ),
+        ("/dev/cu.usbserial-VGC", 38400, ENQ): b"0,3.84E-06\r\n",
+    }
+
+    devices = discover_inficon_vgc402_devices(
+        port_names=["/dev/cu.usbserial-VGC"],
+        serial_factory=FakeSerial,
+        settle_delay=0,
+    )
+
+    assert len(devices) == 1
+    assert devices[0].baudrate == 38400
+    assert devices[0].raw_response == "0,3.84E-06"
+
+
+def test_discover_serial_devices_can_find_gp350_and_vgc402() -> None:
+    FakeSerial.responses = {
+        ("/dev/cu.usbserial-GP", 9600, b"RD\r"): b"1.23E-06\r",
+        ("/dev/cu.usbserial-VGC", 9600, b"PR1\r\n"): f"{ACK}\r\n".encode("ascii"),
+        ("/dev/cu.usbserial-VGC", 9600, ENQ): b"0,4.56E-06\r\n",
+    }
+
+    devices = discover_serial_devices(
+        port_names=["/dev/cu.usbserial-GP", "/dev/cu.usbserial-VGC"],
+        serial_factory=FakeSerial,
+        settle_delay=0,
+    )
+
+    assert [device.device_type for device in devices] == ["gp350", "inficon_vgc402"]
 
 
 def test_select_gp350_device_reports_missing_index() -> None:

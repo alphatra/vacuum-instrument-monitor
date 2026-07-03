@@ -21,6 +21,7 @@ class InfluxConfig:
     measurement: str
     timeout: float
     retries: int
+    device_type: str
     module_type: str
     command: str
 
@@ -92,6 +93,7 @@ class InfluxWriter:
             _format_tag("device", record.device),
             _format_tag("channel", record.channel),
             _format_tag("quality", reading.quality.value),
+            _format_tag("device_type", self.config.device_type),
             _format_tag("module_type", self.config.module_type),
             _format_tag("command", self.config.command),
         ]
@@ -107,6 +109,9 @@ class InfluxWriter:
 
         if reading.unit:
             fields.append(_format_string_field("unit", reading.unit))
+
+        if reading.gauge_status:
+            fields.append(_format_string_field("gauge_status", reading.gauge_status))
 
         measurement = _escape_measurement(self.config.measurement)
         timestamp_ns = _timestamp_to_ns(record.timestamp)

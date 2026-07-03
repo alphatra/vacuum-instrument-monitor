@@ -1,0 +1,17 @@
+# Copy to 99-vacuum-monitor.rules, replace placeholders, then run:
+#   sudo scripts/install_udev_rules.sh /opt/vacuum-instrument-monitor/udev/99-vacuum-monitor.rules
+#
+# Find values:
+#   udevadm info -a -n /dev/ttyUSB0 | less
+#   udevadm info -q property -n /dev/ttyUSB0
+#
+# Prefer ATTRS{serial} when each USB-RS232 adapter has a unique serial number.
+
+# GP350 controller 1.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="REPLACE_VENDOR", ATTRS{idProduct}=="REPLACE_PRODUCT", ATTRS{serial}=="REPLACE_GP350_1_SERIAL", SYMLINK+="vacuum-gp350-1", GROUP="dialout", MODE="0660"
+
+# GP350 controller 2.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="REPLACE_VENDOR", ATTRS{idProduct}=="REPLACE_PRODUCT", ATTRS{serial}=="REPLACE_GP350_2_SERIAL", SYMLINK+="vacuum-gp350-2", GROUP="dialout", MODE="0660"
+
+# INFICON VGC402.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="REPLACE_VENDOR", ATTRS{idProduct}=="REPLACE_PRODUCT", ATTRS{serial}=="REPLACE_VGC402_SERIAL", SYMLINK+="vacuum-vgc402", GROUP="dialout", MODE="0660"

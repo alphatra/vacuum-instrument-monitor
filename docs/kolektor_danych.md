@@ -1,15 +1,16 @@
-# Kolektor danych GP350 - jak działa
+# Kolektor danych - jak działa
 
-Kolektor pyta GP350 o ciśnienie komendą zgodną z instrukcją, mierzy czas
-odpowiedzi, parsuje jedną linię ASCII i zapisuje wynik do CSV.
+Kolektor pyta urządzenie o ciśnienie komendą zgodną z instrukcją, mierzy czas
+odpowiedzi, parsuje ASCII i zapisuje wynik do CSV oraz opcjonalnie InfluxDB.
 
 ```mermaid
 flowchart LR
     GP350["GP350 / virtual_gp350.py"] --> Serial["SerialClient"]
+    VGC["INFICON VGC402"] --> Serial
     Serial --> Collector["gp350_collector.py"]
-    Collector --> Parser["GP350Parser"]
+    Collector --> Parser["GP350Parser / VGC402Parser"]
     Parser --> Writer["CsvWriter"]
-    Writer --> CSV["data/gp350_readings.csv"]
+    Writer --> CSV["data/vacuum_readings.csv"]
     Parser --> Influx["InfluxWriter"]
     Influx --> Bucket["InfluxDB bucket"]
     Collector --> Log["logs/collector.log"]
@@ -20,9 +21,10 @@ flowchart LR
 Komenda zależy od `module_type`:
 
 ```text
-module_type = auto    -> autodetekcja: digital albo rs232
+module_type = auto    -> autodetekcja: digital, rs232 albo serial
 module_type = rs232   -> DS IG
 module_type = digital -> RD
+module_type = serial  -> PR1, PR2 albo PRX dla VGC402
 ```
 
 `DS IG` jest dla RS-232 Module. `RD` jest dla Digital Interface. Odpowiedź ma
@@ -36,6 +38,32 @@ Bez jednostki, bez statusu `ON`, bez przecinka.
 
 `DGS` nie jest pomiarem. `DGS` zwraca status degas: `1` albo `0`.
 
+INFICON VGC402 działa inaczej:
+
+```text
+PR1\r\n -> ACK
+ENQ     -> 0,1.20E-07\r\n
+```
+
+`PR1` czyta kanał 1, `PR2` kanał 2. `PRX` czyta wszystkie kanały jednym
+zapytaniem:
+
+```text
+PRX\r\n -> ACK
+ENQ     -> 0,1.20E-07,0,2.30E-07\r\n
+```
+
+Pierwsza liczba w każdej parze to status kanału, druga to ciśnienie w
+jednostce ustawionej na kontrolerze. Gdy `pressure_unit = auto`, kolektor przy
+starcie wysyła `UNI`, odczytuje jednostkę z urządzenia i dopiero potem mierzy.
+
+```mermaid
+flowchart LR
+    PRX["PRX"] --> Raw["0,1.20E-07,0,2.30E-07"]
+    Raw --> CH1["CSV/Influx: CH1"]
+    Raw --> CH2["CSV/Influx: CH2"]
+```
+
 ## Pętla kolektora
 
 ```mermaid
@@ -43,17 +71,17 @@ sequenceDiagram
     participant Collector as gp350_collector.py
     participant Client as serial_client.py
     participant Port as serial
-    participant Parser as GP350Parser
+    participant Parser as Parser urządzenia
     participant CSV as CsvWriter
     participant Influx as InfluxWriter
 
-    Collector->>Client: send_command("RD")
+    Collector->>Client: send command
     Client->>Port: reset buffers
     Client->>Port: "RD\\r"
     Port-->>Client: "1.20E-07\\r"
     Client-->>Collector: raw_response
     Collector->>Parser: parse(raw_response)
-    Parser-->>Collector: pressure_torr + quality
+    Parser-->>Collector: pressure_torr + quality + gauge_status
     Collector->>CSV: write(record)
     Collector->>Influx: write(record), jeśli enabled=true
 ```
@@ -87,6 +115,8 @@ Manual GP350 dopuszcza:
 - `parity`: `none`, `even`, `odd`
 - `stopbits`: `1` albo `2`
 - `line_terminator`: `crlf`, `cr` albo `lf`
+
+Manual INFICON VGC402 dopuszcza `baudrate`: `9600`, `19200`, `38400`.
 
 Starszy RS-232 Module fabrycznie: `300`, `7`, `none`, `2`.
 Digital Interface fabrycznie: `9600`, `8`, `none`, `1`, terminator `CR`.
@@ -157,18 +187,31 @@ INVALID
 Nagłówek:
 
 ```text
-timestamp,device,channel,pressure_torr,unit,quality,raw_response,latency_ms
+timestamp,device,channel,pressure_torr,unit,quality,gauge_status,raw_response,latency_ms
 ```
 
-Przykład:
+Przykład GP350:
 
 ```text
-2026-06-24T12:00:00+00:00,GP350_1,IG1,1.2e-07,Torr,good,1.20E-07,12.346
+2026-06-24T12:00:00+00:00,GP350_1,IG1,1.2e-07,Torr,good,,1.20E-07,12.346
 ```
 
-`unit` jest ustawiane jako `Torr`, bo projekt zapisuje `pressure_torr`. Jeśli
-urządzenie jest fizycznie przestawione na mbar albo pascal, trzeba zmienić
-interpretację danych przed analizą.
+Przykład VGC402:
+
+```text
+2026-06-24T12:00:00+00:00,VGC402_1,CH1,1.2e-07,Torr,good,ok,"0,1.20E-07",14.120
+```
+
+Przykład VGC402 z `PRX`:
+
+```text
+2026-06-24T12:00:00+00:00,VGC402_1,CH1,1.2e-07,Torr,good,ok,"0,1.20E-07,0,2.30E-07",14.120
+2026-06-24T12:00:00+00:00,VGC402_1,CH2,2.3e-07,Torr,good,ok,"0,1.20E-07,0,2.30E-07",14.120
+```
+
+`pressure_unit = auto` jest zalecane dla VGC402. Kolektor używa wtedy `UNI` i
+rozpoznaje: `mbar`, `Torr`, `Pa`, `micron`. Wynik i tak zapisuje jako
+`pressure_torr`.
 
 ## InfluxDB dla Grafany
 
@@ -182,9 +225,9 @@ Minimalny config:
 enabled = true
 url = http://localhost:8086
 org = lab
-bucket = gp350
+bucket = vacuum
 token_env = INFLUXDB_TOKEN
-measurement = gp350_reading
+measurement = vacuum_pressure
 ```
 
 Szczegóły: `docs/influxdb_grafana.md`.
@@ -204,7 +247,8 @@ Znaczenie:
 - `good`: poprawny odczyt ciśnienia.
 - `timeout`: brak odpowiedzi.
 - `bad_format`: odpowiedź nie pasuje do manualowego formatu ciśnienia.
-- `error`: GP350 zwrócił błąd albo `9.90E+09`.
+- `error`: GP350 zwrócił błąd albo `9.90E+09`; VGC402 zwrócił status kanału
+  inny niż `0`, np. `7 = bpg_bcg_hpg_error`.
 
 ## Odporność
 

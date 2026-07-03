@@ -72,17 +72,18 @@ włączeniu. Kolektor zapisuje to jako `quality=error`.
 flowchart TD
     Raw["1.20E-07"] --> Parser["GP350Parser"]
     Parser --> Reading["pressure_torr=1.2e-07, quality=good"]
-    Reading --> CSV["timestamp,device,channel,pressure_torr,unit,quality,raw_response,latency_ms"]
+    Reading --> CSV["timestamp,device,channel,pressure_torr,unit,quality,gauge_status,raw_response,latency_ms"]
 ```
 
 Kolumny:
 
 ```text
-timestamp,device,channel,pressure_torr,unit,quality,raw_response,latency_ms
+timestamp,device,channel,pressure_torr,unit,quality,gauge_status,raw_response,latency_ms
 ```
 
-Nie ma kolumny `gauge_status`, bo odpowiedź pomiarowa GP350 nie zwraca tekstu
-`ON/OFF/FAIL`.
+`gauge_status` jest puste dla GP350 i ma wartości typu `ok`, `sensor_off`,
+`overrange`, `bpg_bcg_hpg_error` dla urządzeń, które zwracają status kanału,
+np. VGC402.
 
 ## Stany jakości
 
@@ -104,6 +105,7 @@ flowchart TD
     Module{"Jaki moduł?"}
     Module --> RS232["RS-232 Module: 300, 7N2, DS IG"]
     Module --> Digital["Digital Interface: 9600, 8N1, RD"]
+    Module --> VGC["VGC402 serial: 9600/19200/38400, 8N1, PRX"]
 ```
 
 W configu:
@@ -124,6 +126,10 @@ command = RD
 
 Jeśli `command` albo parametry serial nie są podane, kolektor dobiera defaulty z
 `module_type`.
+
+Dla VGC402 zalecane jest `command = PRX` i `pressure_unit = auto`. Kolektor
+wysyła wtedy `UNI`, ustala jednostkę z kontrolera i zapisuje osobne rekordy
+`CH1`, `CH2`.
 
 RS-485 z adresem:
 

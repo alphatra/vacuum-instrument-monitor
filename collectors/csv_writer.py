@@ -2,7 +2,7 @@ import csv
 from dataclasses import dataclass
 from pathlib import Path
 
-from simulators import GP350Reading
+from collectors.measurements import MeasurementReading
 
 CSV_HEADER = [
     "timestamp",
@@ -11,6 +11,7 @@ CSV_HEADER = [
     "pressure_torr",
     "unit",
     "quality",
+    "gauge_status",
     "raw_response",
     "latency_ms",
 ]
@@ -22,7 +23,7 @@ class MeasurementRecord:
     device: str
     channel: str
     latency_ms: float
-    reading: GP350Reading
+    reading: MeasurementReading
 
 
 class CsvWriter:
@@ -60,6 +61,7 @@ class CsvWriter:
                 record.reading.pressure_torr,
                 record.reading.unit or "",
                 record.reading.quality.value,
+                record.reading.gauge_status or "",
                 record.reading.raw_response,
                 f"{record.latency_ms:.3f}",
             ]

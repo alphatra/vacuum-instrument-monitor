@@ -1,8 +1,14 @@
 # Autodetekcja urządzeń serial
 
-Cel: kolektor sam znajduje GP350 podłączone przez adaptery USB-RS232/USB-Serial.
-Na razie wykrywamy tylko GP350. Turbo-V 81-AG i Turbo-V 551 HT zostają jako
-przyszłe profile urządzeń.
+Cel: kolektor sam znajduje urządzenia podłączone przez adaptery
+USB-RS232/USB-Serial.
+
+Teraz wykrywamy:
+
+- GP350
+- INFICON VGC402
+
+Turbo-V 81-AG i Turbo-V 551 HT zostają jako przyszłe profile urządzeń.
 
 ## Co robi skaner
 
@@ -12,8 +18,9 @@ przyszłe profile urządzeń.
 4. Próbuje bezpieczne komendy odczytu:
    - Digital Interface: `RD`
    - RS-232 Module: `DS IG`
+   - INFICON VGC402: `PR1` / `PR2`, potem `ENQ`, przy `9600`, `19200`, `38400`
 5. Jeśli włączysz RS-485, próbuje też `#00RD` ... `#31RD`.
-6. Jeśli odpowiedź wygląda jak ciśnienie GP350, zapisuje port i ustawienia.
+6. Jeśli odpowiedź wygląda jak znany format urządzenia, zapisuje port i ustawienia.
 
 ```mermaid
 flowchart TD
@@ -23,9 +30,10 @@ flowchart TD
     D --> E["Odfiltruj Bluetooth/debug"]
     E --> F["Probe Digital: RD"]
     F --> G["Probe RS-232: DS IG"]
-    G --> H{"scan_rs485 = true?"}
+    G --> V["Probe VGC402: PR1/PR2 -> ENQ at 9600/19200/38400"]
+    V --> H{"scan_rs485 = true?"}
     H -- "tak" --> I["Probe adresów #00-#31"]
-    H -- "nie" --> J["Lista wykrytych GP350"]
+    H -- "nie" --> J["Lista wykrytych urządzeń"]
     I --> J
     J --> K["Wybierz device_index"]
     K --> L["Kolektor używa znalezionego portu"]
@@ -41,8 +49,10 @@ Przykład:
 
 ```text
 [0] type=gp350 module=digital port=/dev/cu.usbserial-A baudrate=9600 confidence=1.00 raw='1.23E-06'
-[1] type=gp350 module=digital port=/dev/cu.usbserial-B baudrate=9600 confidence=1.00 raw='4.56E-06'
+[1] type=inficon_vgc402 module=serial port=/dev/cu.usbserial-B baudrate=9600 confidence=1.00 raw='0,4.56E-06'
 ```
+
+Jeśli VGC402 ma w menu ustawione `38400`, autodetekcja też go znajdzie.
 
 ## Dwa kontrolery GP350
 
@@ -64,6 +74,9 @@ Grafanie.
 ## Ustawienia w config.ini
 
 ```ini
+[Device]
+device_type = auto
+
 [Connection]
 module_type = auto
 serial_port = auto
@@ -77,16 +90,17 @@ rs485_addresses = 0-31
 
 Znaczenie:
 
-- `module_type = auto` - skaner sam rozpoznaje `digital` albo `rs232`.
+- `device_type = auto` - skaner sam rozpoznaje `gp350` albo `inficon_vgc402`.
+- `module_type = auto` - skaner sam rozpoznaje `digital`, `rs232` albo `serial`.
 - `serial_port = auto` - skaner sam wybiera port.
-- `device_index` - który wykryty GP350 ma obsługiwać ten kolektor.
+- `device_index` - które wykryte urządzenie ma obsługiwać ten kolektor.
 - `probe_timeout` - krótki timeout dla pojedynczej próby.
 - `scan_rs485` - dodatkowy wolniejszy scan adresów RS-485.
 - `rs485_addresses` - adresy do próbowania, np. `0-31` albo `1,2`.
 
 ## Granica bezpieczeństwa
 
-Autodetekcja GP350 wysyła tylko komendy odczytu. Nie wysyła:
+Autodetekcja wysyła tylko komendy odczytu. Nie wysyła:
 
 - `DG ON`
 - `IG1 ON`
@@ -94,12 +108,14 @@ Autodetekcja GP350 wysyła tylko komendy odczytu. Nie wysyła:
 - komend Turbo-V
 - żadnych komend sterujących pompą
 
-Turbo-V później powinny dostać osobne profile typu:
+Każda rodzina urządzeń ma osobny profil:
 
 ```text
 devices/gp350.py
+devices/vgc402.py
 devices/turbov81.py
 devices/turbov551.py
 ```
 
-Wtedy skaner może rozpoznawać wiele rodzin urządzeń bez mieszania protokołów.
+Turbo-V to przyszłe profile. Dzięki temu kolektor nie miesza protokołów GP350,
+VGC402 i pomp turbo w jednym miejscu.

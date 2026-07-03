@@ -1,7 +1,7 @@
-# Scenariusze ustawień kolektora GP350
+# Scenariusze ustawień kolektora
 
-Gotowe ustawienia do `config/config.ini`. Wszystkie używają komend zgodnych z
-manualem GP350.
+Gotowe ustawienia do `config/config.ini`. GP350 i INFICON VGC402 mają różne
+protokoły, więc najważniejsze jest poprawne `device_type`.
 
 ```mermaid
 flowchart TD
@@ -9,6 +9,7 @@ flowchart TD
     Start --> RS232["prawdziwy RS-232 Module"]
     Start --> Digital["prawdziwy Digital Interface"]
     Start --> Auto["2x GP350 autodetekcja"]
+    Start --> VGC["INFICON VGC402"]
     Start --> Grafana["InfluxDB + Grafana"]
     Start --> Debug["debug komunikacji"]
     Start --> Long["długi pomiar"]
@@ -31,6 +32,12 @@ write_timeout = 1.0
 
 [Collector]
 interval_seconds = 1.0
+
+[Device]
+device_type = gp350
+device_name = GP350_SIM
+channel = IG1
+pressure_unit = Torr
 
 [File]
 csv_filepath = data/sim_test.csv
@@ -58,8 +65,10 @@ device_index = 0
 scan_rs485 = false
 
 [Device]
+device_type = gp350
 device_name = GP350_CHAMBER
 channel = IG1
+pressure_unit = Torr
 
 [File]
 csv_filepath = data/gp350_chamber.csv
@@ -77,8 +86,10 @@ device_index = 1
 scan_rs485 = false
 
 [Device]
+device_type = gp350
 device_name = GP350_LOADLOCK
 channel = IG1
+pressure_unit = Torr
 
 [File]
 csv_filepath = data/gp350_loadlock.csv
@@ -144,16 +155,92 @@ interval_seconds = 1.0
 
 Kolektor wyśle `#01RD`, a parser przyjmie odpowiedź z prefixem `*`.
 
-## 5. InfluxDB + Grafana
+## 5. INFICON VGC402 - oba kanały
+
+Najwygodniejszy tryb to `PRX`: jeden kolektor, jedno zapytanie, dwa rekordy
+CSV/Influx (`CH1` i `CH2`). `pressure_unit = auto` wysyła przy starcie `UNI` i
+odczytuje jednostkę z kontrolera.
+
+```ini
+[Connection]
+module_type = serial
+serial_port = auto
+baudrate = 9600
+bytesize = 8
+parity = none
+stopbits = 1
+line_terminator = crlf
+timeout = 1.0
+write_timeout = 1.0
+
+[Collector]
+command = PRX
+interval_seconds = 1.0
+
+[Device]
+device_type = inficon_vgc402
+device_name = VGC402_1
+channel = ALL
+pressure_unit = auto
+
+[File]
+csv_filepath = data/vgc402_all_channels.csv
+```
+
+VGC402 może pracować przy `9600`, `19200` albo `38400`. Autodetekcja próbuje
+wszystkie trzy prędkości. Jeśli znasz prędkość, wpisz ją w `baudrate`.
+
+## 6. INFICON VGC402 - tylko kanał 1
+
+```ini
+[Collector]
+command = PR1
+
+[Device]
+device_type = inficon_vgc402
+device_name = VGC402_1
+channel = CH1
+pressure_unit = auto
+
+[File]
+csv_filepath = data/vgc402_ch1.csv
+```
+
+## 7. INFICON VGC402 - tylko kanał 2
+
+```ini
+[Collector]
+command = PR2
+
+[Device]
+device_type = inficon_vgc402
+device_name = VGC402_1
+channel = CH2
+pressure_unit = auto
+
+[File]
+csv_filepath = data/vgc402_ch2.csv
+```
+
+Jeśli nie chcesz `auto`, możesz wpisać jednostkę ręcznie:
+
+```ini
+[Device]
+pressure_unit = micron
+```
+
+Obsługiwane: `Torr`, `mbar`, `bar`, `Pa`, `micron`.
+
+## 8. InfluxDB + Grafana
 
 ```ini
 [InfluxDB]
 enabled = true
 url = http://localhost:8086
 org = lab
-bucket = gp350
+bucket = vacuum
 token_env = INFLUXDB_TOKEN
-measurement = gp350_reading
+measurement = vacuum_pressure
 timeout = 2.0
 retries = 1
 fail_on_error = false
@@ -167,7 +254,7 @@ export INFLUXDB_TOKEN="..."
 
 Grafana query i panele: `docs/influxdb_grafana.md`.
 
-## 6. Debug komunikacji
+## 9. Debug komunikacji
 
 ```ini
 [General]
@@ -182,7 +269,7 @@ log_file = logs/debug_run.log
 
 Używaj, gdy `quality` często jest `timeout`, `bad_format` albo `error`.
 
-## 7. Długi pomiar
+## 10. Długi pomiar
 
 ```ini
 [Collector]
@@ -196,7 +283,7 @@ log_file = logs/long_run.log
 
 Mniej danych, łatwiejszy pomiar nocny.
 
-## 8. Każdy start czyści CSV
+## 11. Każdy start czyści CSV
 
 ```ini
 [File]
@@ -206,7 +293,7 @@ csv_mode = overwrite
 
 Plik powstaje od razu przy starcie kolektora.
 
-## 9. Historia w jednym CSV
+## 12. Historia w jednym CSV
 
 ```ini
 [File]
@@ -217,7 +304,7 @@ csv_mode = append
 Nowe pomiary dopisywane na końcu. Pilnuj `device_name` i `channel`, jeśli
 mieszasz wiele urządzeń.
 
-## 10. Kiedy nie używać `DGS`
+## 13. Kiedy nie używać `DGS`
 
 `DGS` nie mierzy ciśnienia. To status degas.
 
@@ -230,3 +317,4 @@ Do CSV z ciśnieniem używaj:
 
 - `DS IG` dla RS-232 Module
 - `RD` dla Digital Interface
+- `PR1` / `PR2` / `PRX` dla INFICON VGC402

@@ -6,6 +6,7 @@ from typing import Any
 import serial
 from serial.tools import list_ports
 
+from collectors.vgc402 import ACK, ENQ, NAK, VGC402_BAUDRATES, VGC402Parser
 from simulators import GP350Parser, ParsedQuality
 
 
@@ -16,6 +17,7 @@ class DeviceDiscoveryError(Exception):
 @dataclass(frozen=True)
 class DetectionProbe:
     # One safe read-only serial attempt used during discovery.
+    device_type: str
     module_type: str
     baudrate: int
     bytesize: int
@@ -24,6 +26,7 @@ class DetectionProbe:
     line_terminator: str
     command: str
     rs485_address: int | None = None
+    protocol: str = "plain"
 
     @property
     def serial_command(self) -> str:
@@ -55,6 +58,7 @@ class DetectedDevice:
 
 GP350_DIRECT_PROBES = (
     DetectionProbe(
+        device_type="gp350",
         module_type="digital",
         baudrate=9600,
         bytesize=8,
@@ -64,6 +68,7 @@ GP350_DIRECT_PROBES = (
         command="RD",
     ),
     DetectionProbe(
+        device_type="gp350",
         module_type="rs232",
         baudrate=300,
         bytesize=7,
@@ -72,6 +77,21 @@ GP350_DIRECT_PROBES = (
         line_terminator="\r\n",
         command="DS IG",
     ),
+)
+VGC402_DIRECT_PROBES = tuple(
+    DetectionProbe(
+        device_type="inficon_vgc402",
+        module_type="serial",
+        baudrate=baudrate,
+        bytesize=8,
+        parity="none",
+        stopbits=1.0,
+        line_terminator="\r\n",
+        command=command,
+        protocol="ack_enq",
+    )
+    for baudrate in VGC402_BAUDRATES
+    for command in ("PR1", "PR2")
 )
 
 PARITY_MAP = {
@@ -82,6 +102,40 @@ PARITY_MAP = {
 
 GP350_NOT_READY_RESPONSES = {"9.90E+09", "9.90E+9", "9.9E+09", "9.9E+9"}
 IGNORED_PORT_KEYWORDS = {"bluetooth", "debug-console"}
+
+
+def discover_serial_devices(
+    *,
+    ports: Iterable[Any] | None = None,
+    port_names: Iterable[str] | None = None,
+    include_device_types: Iterable[str] = ("gp350", "inficon_vgc402"),
+    include_module_types: Iterable[str] = ("digital", "rs232", "serial"),
+    rs485_addresses: Iterable[int] = (),
+    timeout: float = 0.35,
+    write_timeout: float | None = None,
+    settle_delay: float = 0.05,
+    serial_factory: Callable[..., Any] = serial.Serial,
+) -> list[DetectedDevice]:
+    """Scan serial ports and return supported vacuum instruments."""
+    candidates = _candidate_ports(ports=ports, port_names=port_names)
+    detected: list[DetectedDevice] = []
+
+    for port_info in candidates:
+        device = probe_serial_port(
+            _port_device(port_info),
+            port_info=port_info,
+            include_device_types=include_device_types,
+            include_module_types=include_module_types,
+            rs485_addresses=rs485_addresses,
+            timeout=timeout,
+            write_timeout=write_timeout,
+            settle_delay=settle_delay,
+            serial_factory=serial_factory,
+        )
+        if device is not None:
+            detected.append(device)
+
+    return sorted(detected, key=lambda item: item.port)
 
 
 def discover_gp350_devices(
@@ -96,43 +150,60 @@ def discover_gp350_devices(
     serial_factory: Callable[..., Any] = serial.Serial,
 ) -> list[DetectedDevice]:
     """Scan serial ports and return GP350-like devices."""
-    candidates = _candidate_ports(ports=ports, port_names=port_names)
-    detected: list[DetectedDevice] = []
-
-    for port_info in candidates:
-        device = probe_gp350_port(
-            _port_device(port_info),
-            port_info=port_info,
-            include_module_types=include_module_types,
-            rs485_addresses=rs485_addresses,
-            timeout=timeout,
-            write_timeout=write_timeout,
-            settle_delay=settle_delay,
-            serial_factory=serial_factory,
-        )
-        if device is not None:
-            detected.append(device)
-
-    return sorted(detected, key=lambda item: item.port)
+    return discover_serial_devices(
+        ports=ports,
+        port_names=port_names,
+        include_device_types=("gp350",),
+        include_module_types=include_module_types,
+        rs485_addresses=rs485_addresses,
+        timeout=timeout,
+        write_timeout=write_timeout,
+        settle_delay=settle_delay,
+        serial_factory=serial_factory,
+    )
 
 
-def probe_gp350_port(
+def discover_inficon_vgc402_devices(
+    *,
+    ports: Iterable[Any] | None = None,
+    port_names: Iterable[str] | None = None,
+    timeout: float = 0.35,
+    write_timeout: float | None = None,
+    settle_delay: float = 0.05,
+    serial_factory: Callable[..., Any] = serial.Serial,
+) -> list[DetectedDevice]:
+    """Scan serial ports and return INFICON VGC402-like devices."""
+    return discover_serial_devices(
+        ports=ports,
+        port_names=port_names,
+        include_device_types=("inficon_vgc402",),
+        include_module_types=("serial",),
+        timeout=timeout,
+        write_timeout=write_timeout,
+        settle_delay=settle_delay,
+        serial_factory=serial_factory,
+    )
+
+
+def probe_serial_port(
     port: str,
     *,
     port_info: Any | None = None,
-    include_module_types: Iterable[str] = ("digital", "rs232"),
+    include_device_types: Iterable[str] = ("gp350", "inficon_vgc402"),
+    include_module_types: Iterable[str] = ("digital", "rs232", "serial"),
     rs485_addresses: Iterable[int] = (),
     timeout: float = 0.35,
     write_timeout: float | None = None,
     settle_delay: float = 0.05,
     serial_factory: Callable[..., Any] = serial.Serial,
 ) -> DetectedDevice | None:
-    """Try safe GP350 read commands on one port."""
+    """Try safe read-only commands on one port."""
     best_match: DetectedDevice | None = None
+    device_types = set(include_device_types)
     module_types = set(include_module_types)
 
-    for probe in _build_gp350_probes(module_types, rs485_addresses):
-        detected = _try_gp350_probe(
+    for probe in _build_probes(device_types, module_types, rs485_addresses):
+        detected = _try_probe(
             port,
             probe,
             port_info=port_info,
@@ -153,12 +224,39 @@ def probe_gp350_port(
     return best_match
 
 
-def select_gp350_device(
+def probe_gp350_port(
+    port: str,
+    *,
+    port_info: Any | None = None,
+    include_module_types: Iterable[str] = ("digital", "rs232"),
+    rs485_addresses: Iterable[int] = (),
+    timeout: float = 0.35,
+    write_timeout: float | None = None,
+    settle_delay: float = 0.05,
+    serial_factory: Callable[..., Any] = serial.Serial,
+) -> DetectedDevice | None:
+    """Try safe GP350 read commands on one port."""
+    return probe_serial_port(
+        port,
+        port_info=port_info,
+        include_device_types=("gp350",),
+        include_module_types=include_module_types,
+        rs485_addresses=rs485_addresses,
+        timeout=timeout,
+        write_timeout=write_timeout,
+        settle_delay=settle_delay,
+        serial_factory=serial_factory,
+    )
+
+
+def select_device(
     devices: list[DetectedDevice],
     index: int = 0,
 ) -> DetectedDevice:
     if not devices:
-        raise DeviceDiscoveryError("Nie wykryto GP350 na dostępnych portach serial")
+        raise DeviceDiscoveryError(
+            "Nie wykryto obsługiwanego urządzenia na dostępnych portach serial"
+        )
 
     if index < 0 or index >= len(devices):
         raise DeviceDiscoveryError(
@@ -166,6 +264,13 @@ def select_gp350_device(
         )
 
     return devices[index]
+
+
+def select_gp350_device(
+    devices: list[DetectedDevice],
+    index: int = 0,
+) -> DetectedDevice:
+    return select_device(devices, index)
 
 
 def _candidate_ports(
@@ -216,17 +321,25 @@ def _is_ignored_port(port_info: Any) -> bool:
     return any(keyword in text for keyword in IGNORED_PORT_KEYWORDS)
 
 
-def _build_gp350_probes(
+def _build_probes(
+    device_types: set[str],
     module_types: set[str],
     rs485_addresses: Iterable[int],
 ) -> list[DetectionProbe]:
-    probes = [
-        probe for probe in GP350_DIRECT_PROBES if probe.module_type in module_types
-    ]
+    probes = []
 
-    if "digital" in module_types:
+    if "gp350" in device_types:
+        probes.extend(
+            probe for probe in GP350_DIRECT_PROBES if probe.module_type in module_types
+        )
+
+    if "inficon_vgc402" in device_types and "serial" in module_types:
+        probes.extend(VGC402_DIRECT_PROBES)
+
+    if "gp350" in device_types and "digital" in module_types:
         probes.extend(
             DetectionProbe(
+                device_type="gp350",
                 module_type="digital",
                 baudrate=9600,
                 bytesize=8,
@@ -242,7 +355,7 @@ def _build_gp350_probes(
     return probes
 
 
-def _try_gp350_probe(
+def _try_probe(
     port: str,
     probe: DetectionProbe,
     *,
@@ -271,17 +384,17 @@ def _try_gp350_probe(
                 f"{probe.serial_command}{probe.line_terminator}".encode("ascii")
             )
             serial_port.flush()
-            raw_response = _read_response(serial_port, probe.line_terminator)
+            raw_response = _read_probe_response(serial_port, probe)
     except (OSError, serial.SerialException):
         return None
 
     response_text = raw_response.decode("ascii", errors="replace").strip()
-    confidence = _score_gp350_response(response_text)
+    confidence = _score_probe_response(probe, response_text)
     if confidence <= 0:
         return None
 
     return DetectedDevice(
-        device_type="gp350",
+        device_type=probe.device_type,
         port=port,
         module_type=probe.module_type,
         baudrate=probe.baudrate,
@@ -297,6 +410,24 @@ def _try_gp350_probe(
         hwid=str(getattr(port_info, "hwid", "") or ""),
         serial_number=str(getattr(port_info, "serial_number", "") or ""),
     )
+
+
+def _read_probe_response(serial_port: Any, probe: DetectionProbe) -> bytes:
+    if probe.protocol == "ack_enq":
+        handshake = serial_port.readline()
+        if handshake.startswith(NAK.encode("ascii")):
+            serial_port.write(ENQ)
+            serial_port.flush()
+            return b"NAK:" + serial_port.readline()
+
+        if not handshake.startswith(ACK.encode("ascii")):
+            return handshake
+
+        serial_port.write(ENQ)
+        serial_port.flush()
+        return serial_port.readline()
+
+    return _read_response(serial_port, probe.line_terminator)
 
 
 def _read_response(serial_port: Any, line_terminator: str) -> bytes:
@@ -328,6 +459,30 @@ def _score_gp350_response(raw_response: str) -> float:
         normalized = normalized[1:].strip()
 
     if normalized in GP350_NOT_READY_RESPONSES:
+        return 0.75
+
+    return 0.0
+
+
+def _score_probe_response(probe: DetectionProbe, raw_response: str) -> float:
+    if probe.device_type == "gp350":
+        return _score_gp350_response(raw_response)
+
+    if probe.device_type == "inficon_vgc402":
+        return _score_vgc402_response(raw_response)
+
+    return 0.0
+
+
+def _score_vgc402_response(raw_response: str) -> float:
+    if not raw_response:
+        return 0.0
+
+    reading = VGC402Parser.parse(raw_response)
+    if reading.quality is ParsedQuality.GOOD:
+        return 1.0
+
+    if reading.gauge_status is not None:
         return 0.75
 
     return 0.0

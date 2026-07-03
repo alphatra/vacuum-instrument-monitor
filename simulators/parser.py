@@ -1,7 +1,8 @@
 import re
-from dataclasses import dataclass
 
-from .enums import GaugeStatus, ParsedQuality
+from collectors.measurements import MeasurementReading
+
+from .enums import ParsedQuality
 
 PRESSURE_PATTERN = re.compile(r"^[+-]?\d\.\d{2}E[+-]\d{2}$", re.IGNORECASE)
 IG_NOT_READY_VALUES = {"9.90E+09", "9.90E+9", "9.9E+09", "9.9E+9"}
@@ -14,14 +15,7 @@ RS232_ERROR_MESSAGES = {
 DIGITAL_ERROR_PREFIXES = ("? OVERR", "? PRITY", "? SYNTX", "? RAM", "? INVALID")
 
 
-@dataclass(frozen=True)
-class GP350Reading:
-    # Parsed response with quality flag for downstream logic.
-    pressure_torr: float | None
-    unit: str | None
-    gauge_status: GaugeStatus | None
-    quality: ParsedQuality
-    raw_response: str
+GP350Reading = MeasurementReading
 
 
 class GP350Parser:

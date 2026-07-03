@@ -1,1 +1,1 @@
-"""Pakiet kolektora danych GP350."""
+"""Vacuum instrument collectors."""

@@ -19,6 +19,7 @@ def make_config() -> InfluxConfig:
         measurement="gp350 reading",
         timeout=2.0,
         retries=0,
+        device_type="gp350",
         module_type="digital",
         command="#01RD",
     )
@@ -50,6 +51,7 @@ def test_influx_line_protocol_escapes_values() -> None:
         "device=GP\\ 350\\,\\=A,"
         "channel=IG1,"
         "quality=good,"
+        "device_type=gp350,"
         "module_type=digital,"
         "command=#01RD "
     )

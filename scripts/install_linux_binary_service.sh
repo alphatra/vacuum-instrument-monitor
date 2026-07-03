@@ -10,6 +10,8 @@ UNIT_DST="/etc/systemd/system/vacuum-monitor-collector-binary@.service"
 EXAMPLE_CONFIG="$APP_DIR/config/examples/${INSTANCE}.ini"
 BINARY_PATH="${BINARY_PATH:-$APP_DIR/bin/vacuum-collector}"
 BUILD_IF_MISSING="${BUILD_IF_MISSING:-true}"
+LOGROTATE_SRC="$APP_DIR/logrotate/vacuum-monitor"
+LOGROTATE_DST="/etc/logrotate.d/vacuum-monitor"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run as root: sudo $0 ${INSTANCE}" >&2
@@ -44,6 +46,10 @@ install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0755 "$APP_DIR/data" "$APP_D
 install -d -m 0755 "$APP_DIR/bin"
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"
 
+if [ -f "$LOGROTATE_SRC" ]; then
+  install -m 0644 "$LOGROTATE_SRC" "$LOGROTATE_DST"
+fi
+
 if [ ! -f "$CONFIG_DIR/collector.env" ]; then
   if [ -f "$APP_DIR/config/examples/collector.env.example" ]; then
     install -m 0600 "$APP_DIR/config/examples/collector.env.example" \
@@ -68,3 +74,4 @@ echo "Binary:    $BINARY_PATH"
 echo "Config:    $CONFIG_DIR/${INSTANCE}.ini"
 echo "Env:       $CONFIG_DIR/collector.env"
 echo "Logs:      journalctl -u vacuum-monitor-collector-binary@${INSTANCE}.service -f"
+echo "Logrotate: $LOGROTATE_DST"

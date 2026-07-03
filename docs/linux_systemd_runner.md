@@ -1,8 +1,8 @@
 # Linux runner i autostart kolektora
 
 Cel: urządzenie Linux/Raspberry Pi ma samo startować kolektor po boot, wykrywać
-GP350, zapisywać CSV i wysyłać dane do zewnętrznego InfluxDB, który potem czyta
-Grafana.
+GP350 albo INFICON VGC402, zapisywać CSV i wysyłać dane do zewnętrznego
+InfluxDB, który potem czyta Grafana.
 
 ## Architektura
 
@@ -10,15 +10,20 @@ Grafana.
 flowchart LR
     GP1["GP350 #1"] --> USB1["USB-RS232"]
     GP2["GP350 #2"] --> USB2["USB-RS232"]
+    VGC["VGC402"] --> USB3["USB-RS232"]
     USB1 --> Linux["Linux / Raspberry Pi"]
     USB2 --> Linux
+    USB3 --> Linux
     Linux --> Runner["run_collector_linux.sh"]
     Runner --> C1["collector@ gp350-1"]
     Runner --> C2["collector@ gp350-2"]
+    Runner --> C3["collector@ vgc402"]
     C1 --> CSV1["local CSV backup"]
     C2 --> CSV2["local CSV backup"]
+    C3 --> CSV3["local CSV backup"]
     C1 --> Influx["external InfluxDB"]
     C2 --> Influx
+    C3 --> Influx
     Influx --> Grafana["external Grafana"]
 ```
 
@@ -44,13 +49,18 @@ ani `.venv`.
 - `scripts/run_collector_linux.sh` - uruchamia kolektor z absolutną ścieżką do configu.
 - `scripts/build_linux_binary.sh` - buduje binarkę PyInstaller na Linux.
 - `scripts/run_collector_binary_linux.sh` - odpala gotową binarkę.
+- `scripts/check_linux_binary.sh` - sprawdza binarkę na docelowym Linux/ARM.
 - `systemd/vacuum-monitor-collector@.service` - autostart/restart.
 - `systemd/vacuum-monitor-collector-binary@.service` - autostart dla binarki.
 - `scripts/install_linux_service.sh` - instaluje usługę.
 - `scripts/install_linux_binary_service.sh` - buduje binarkę i instaluje usługę.
+- `scripts/install_udev_rules.sh` - instaluje stabilne porty `/dev/vacuum-*`.
 - `config/examples/gp350-1.ini` - pierwszy GP350.
 - `config/examples/gp350-2.ini` - drugi GP350.
+- `config/examples/vgc402.ini` - INFICON VGC402.
 - `config/examples/collector.env.example` - token InfluxDB.
+- `logrotate/vacuum-monitor` - rotacja plików z `logs/`.
+- `udev/99-vacuum-monitor.rules.example` - szablon stabilnych portów.
 
 ## Instalacja na Linux/Raspberry Pi
 
@@ -91,6 +101,7 @@ Configi:
 ```bash
 sudo cp config/examples/gp350-1.ini /etc/vacuum-monitor/gp350-1.ini
 sudo cp config/examples/gp350-2.ini /etc/vacuum-monitor/gp350-2.ini
+sudo cp config/examples/vgc402.ini /etc/vacuum-monitor/vgc402.ini
 ```
 
 W obu plikach zmień:
@@ -109,6 +120,14 @@ Najpierw wykrywanie:
 ```bash
 /opt/vacuum-instrument-monitor/scripts/run_collector_linux.sh \
   /etc/vacuum-monitor/gp350-1.ini \
+  --discover
+```
+
+VGC402:
+
+```bash
+/opt/vacuum-instrument-monitor/scripts/run_collector_linux.sh \
+  /etc/vacuum-monitor/vgc402.ini \
   --discover
 ```
 
@@ -135,11 +154,18 @@ Drugi GP350:
 sudo /opt/vacuum-instrument-monitor/scripts/install_linux_service.sh gp350-2
 ```
 
+VGC402:
+
+```bash
+sudo /opt/vacuum-instrument-monitor/scripts/install_linux_service.sh vgc402
+```
+
 Status:
 
 ```bash
 systemctl status vacuum-monitor-collector@gp350-1.service
 systemctl status vacuum-monitor-collector@gp350-2.service
+systemctl status vacuum-monitor-collector@vgc402.service
 ```
 
 Logi:
@@ -147,6 +173,7 @@ Logi:
 ```bash
 journalctl -u vacuum-monitor-collector@gp350-1.service -f
 journalctl -u vacuum-monitor-collector@gp350-2.service -f
+journalctl -u vacuum-monitor-collector@vgc402.service -f
 ```
 
 Restart:
@@ -190,23 +217,32 @@ Test:
   --discover
 ```
 
+Szybki check binarki na Raspberry Pi:
+
+```bash
+scripts/check_linux_binary.sh /etc/vacuum-monitor/vgc402.ini
+```
+
 Autostart z binarki:
 
 ```bash
 sudo /opt/vacuum-instrument-monitor/scripts/install_linux_binary_service.sh gp350-1
 sudo /opt/vacuum-instrument-monitor/scripts/install_linux_binary_service.sh gp350-2
+sudo /opt/vacuum-instrument-monitor/scripts/install_linux_binary_service.sh vgc402
 ```
 
 Logi:
 
 ```bash
 journalctl -u vacuum-monitor-collector-binary@gp350-1.service -f
+journalctl -u vacuum-monitor-collector-binary@vgc402.service -f
 ```
 
 Status:
 
 ```bash
 systemctl status vacuum-monitor-collector-binary@gp350-1.service
+systemctl status vacuum-monitor-collector-binary@vgc402.service
 ```
 
 Restart:
@@ -214,6 +250,43 @@ Restart:
 ```bash
 sudo systemctl restart vacuum-monitor-collector-binary@gp350-1.service
 ```
+
+## Stabilne porty udev
+
+Autodetekcja działa, ale do produkcji warto nadać adapterom stałe nazwy:
+
+```text
+/dev/vacuum-gp350-1
+/dev/vacuum-gp350-2
+/dev/vacuum-vgc402
+```
+
+Kroki:
+
+```bash
+cp udev/99-vacuum-monitor.rules.example udev/99-vacuum-monitor.rules
+udevadm info -q property -n /dev/ttyUSB0
+nano udev/99-vacuum-monitor.rules
+sudo scripts/install_udev_rules.sh /opt/vacuum-instrument-monitor/udev/99-vacuum-monitor.rules
+```
+
+Po przepięciu USB:
+
+```bash
+ls -l /dev/vacuum-*
+```
+
+W configu możesz wtedy użyć np.:
+
+```ini
+[Connection]
+serial_port = /dev/vacuum-vgc402
+```
+
+## Logrotate
+
+Instalatory `install_linux_service.sh` i `install_linux_binary_service.sh`
+kopiują `logrotate/vacuum-monitor` do `/etc/logrotate.d/vacuum-monitor`.
 
 `onefile` łatwo kopiować, ale startuje trochę wolniej. `onedir` startuje
 szybciej, ale ma katalog z plikami:

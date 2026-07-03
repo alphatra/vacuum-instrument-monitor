@@ -3,6 +3,12 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from collectors.vgc402 import (
+    VGC402_AUTO_PRESSURE_UNIT,
+    VGC402_BAUDRATES,
+    VGC402_COMMANDS,
+)
+
 MODULE_DEFAULTS = {
     "rs232": {
         "baudrate": 300,
@@ -20,7 +26,19 @@ MODULE_DEFAULTS = {
         "line_terminator": "\r",
         "command": "RD",
     },
+    "serial": {
+        "baudrate": 9600,
+        "bytesize": 8,
+        "parity": "none",
+        "stopbits": 1.0,
+        "line_terminator": "\r\n",
+        "command": "PR1",
+    },
 }
+
+DEVICE_TYPES = {"auto", "gp350", "inficon_vgc402"}
+GP350_MODULE_TYPES = {"auto", "rs232", "digital"}
+VGC402_MODULE_TYPES = {"auto", "serial"}
 
 TERMINATOR_ALIASES = {
     "crlf": "\r\n",
@@ -40,6 +58,7 @@ class ConfigValidationError(Exception):
 class AppConfig:
     debug: bool = False
     log_level: str = "info"
+    device_type: str = "gp350"
     module_type: str = "digital"
     serial_port: str = ""
     baudrate: int = 9600
@@ -58,7 +77,8 @@ class AppConfig:
     interval_seconds: float = 1.0
     device_name: str = "GP350_1"
     channel: str = "IG1"
-    csv_filepath: str = "data/gp350_readings.csv"
+    pressure_unit: str = "Torr"
+    csv_filepath: str = "data/vacuum_readings.csv"
     csv_mode: str = "overwrite"
     log_file: str = "logs/collector.log"
     influx_enabled: bool = False
@@ -67,7 +87,7 @@ class AppConfig:
     influx_bucket: str = ""
     influx_token: str = ""
     influx_token_env: str = "INFLUXDB_TOKEN"
-    influx_measurement: str = "gp350_reading"
+    influx_measurement: str = "vacuum_pressure"
     influx_timeout: float = 2.0
     influx_retries: int = 0
     influx_fail_on_error: bool = False
@@ -102,13 +122,26 @@ class AppConfig:
                 "module_type",
                 fallback=defaults.module_type,
             ).strip().lower()
+
+            device_type = config.get(
+                "Device",
+                "device_type",
+                fallback=defaults.device_type,
+            ).strip().lower()
+            if device_type not in DEVICE_TYPES:
+                raise ConfigValidationError(
+                    "device_type musi mieć wartość auto, gp350 albo inficon_vgc402"
+                )
+
             if module_type not in {*MODULE_DEFAULTS, "auto"}:
                 raise ConfigValidationError(
-                    "module_type musi mieć wartość auto, rs232 albo digital"
+                    "module_type musi mieć wartość auto, rs232, digital albo serial"
                 )
 
             module_defaults = MODULE_DEFAULTS[
-                "digital" if module_type == "auto" else module_type
+                cls._default_module_type(device_type)
+                if module_type == "auto"
+                else module_type
             ]
             rs485_address = cls._read_optional_int(
                 config,
@@ -123,6 +156,7 @@ class AppConfig:
                     "log_level",
                     fallback=defaults.log_level,
                 ).lower(),
+                device_type=device_type,
                 module_type=module_type,
                 serial_port=serial_port,
                 baudrate=config.getint(
@@ -199,6 +233,11 @@ class AppConfig:
                     "channel",
                     fallback=defaults.channel,
                 ).strip(),
+                pressure_unit=config.get(
+                    "Device",
+                    "pressure_unit",
+                    fallback=defaults.pressure_unit,
+                ).strip(),
                 csv_filepath=config.get(
                     "File",
                     "csv_filepath",
@@ -273,6 +312,13 @@ class AppConfig:
 
         app_config.validate()
         return app_config
+
+    @staticmethod
+    def _default_module_type(device_type: str) -> str:
+        if device_type == "inficon_vgc402":
+            return "serial"
+
+        return "digital"
 
     @staticmethod
     def _read_optional_int(
@@ -352,12 +398,30 @@ class AppConfig:
                 "Ustaw go w config/config.ini, wpisz auto albo użyj --port."
             )
 
-        if self.module_type not in {*MODULE_DEFAULTS, "auto"}:
+        if self.device_type not in DEVICE_TYPES:
             raise ConfigValidationError(
-                "module_type musi mieć wartość auto, rs232 albo digital"
+                "device_type musi mieć wartość auto, gp350 albo inficon_vgc402"
             )
 
-        valid_baudrates = {75, 150, 300, 600, 1200, 2400, 4800, 9600, 19200}
+        if self.module_type not in {*MODULE_DEFAULTS, "auto"}:
+            raise ConfigValidationError(
+                "module_type musi mieć wartość auto, rs232, digital albo serial"
+            )
+
+        if self.device_type == "gp350" and self.module_type not in GP350_MODULE_TYPES:
+            raise ConfigValidationError(
+                "GP350 obsługuje module_type auto, rs232 albo digital"
+            )
+
+        if (
+            self.device_type == "inficon_vgc402"
+            and self.module_type not in VGC402_MODULE_TYPES
+        ):
+            raise ConfigValidationError(
+                "INFICON VGC402 obsługuje module_type auto albo serial"
+            )
+
+        valid_baudrates = self._valid_baudrates()
         if self.baudrate not in valid_baudrates:
             raise ConfigValidationError(
                 f"Nieprawidłowy baudrate: {self.baudrate}. "
@@ -414,11 +478,34 @@ class AppConfig:
         if not self.command:
             raise ConfigValidationError("command nie może być pusty")
 
+        if (
+            self.device_type == "inficon_vgc402"
+            and self.command.upper() not in VGC402_COMMANDS
+        ):
+            raise ConfigValidationError(
+                "INFICON VGC402 obsługuje command PR1, PR2 albo PRX"
+            )
+
         if not self.device_name:
             raise ConfigValidationError("device_name nie może być pusty")
 
         if not self.channel:
             raise ConfigValidationError("channel nie może być pusty")
+
+        valid_pressure_units = {
+            VGC402_AUTO_PRESSURE_UNIT,
+            "bar",
+            "torr",
+            "mbar",
+            "pa",
+            "pascal",
+            "micron",
+            "microns",
+        }
+        if self.pressure_unit.lower() not in valid_pressure_units:
+            raise ConfigValidationError(
+                "pressure_unit musi mieć wartość auto, Torr, mbar, bar, Pa albo micron"
+            )
 
         if self.log_level not in {"debug", "info", "warning", "error"}:
             raise ConfigValidationError(
@@ -476,9 +563,23 @@ class AppConfig:
 
         return os.environ.get(self.influx_token_env, "")
 
+    def _valid_baudrates(self) -> set[int]:
+        gp350_baudrates = {75, 150, 300, 600, 1200, 2400, 4800, 9600, 19200}
+        vgc402_baudrates = set(VGC402_BAUDRATES)
+        if self.device_type == "inficon_vgc402" or self.module_type == "serial":
+            return vgc402_baudrates
+        if self.device_type == "auto":
+            return gp350_baudrates | vgc402_baudrates
+
+        return gp350_baudrates
+
     @property
     def needs_device_detection(self) -> bool:
-        return self.serial_port == "auto" or self.module_type == "auto"
+        return (
+            self.serial_port == "auto"
+            or self.module_type == "auto"
+            or self.device_type == "auto"
+        )
 
     def has_changed(self, last_modified_time: float) -> tuple[bool, float]:
         try:
