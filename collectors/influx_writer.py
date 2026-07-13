@@ -107,6 +107,15 @@ class InfluxWriter:
         if reading.pressure_torr is not None:
             fields.insert(0, f"pressure_torr={reading.pressure_torr:.12g}")
 
+        if reading.adc_voltage is not None:
+            fields.append(f"adc_voltage={reading.adc_voltage:.12g}")
+
+        if reading.signal_voltage is not None:
+            fields.append(f"signal_voltage={reading.signal_voltage:.12g}")
+
+        if reading.adc_raw is not None:
+            fields.append(f"adc_raw={reading.adc_raw}i")
+
         if reading.unit:
             fields.append(_format_string_field("unit", reading.unit))
 

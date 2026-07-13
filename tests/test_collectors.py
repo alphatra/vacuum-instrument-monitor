@@ -463,6 +463,9 @@ def test_csv_writer_uses_documented_columns(tmp_path) -> None:
         "good",
         "",
         "1.23E-06",
+        "",
+        "",
+        "",
         "12.346",
     ]
 

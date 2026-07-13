@@ -15,3 +15,6 @@ class MeasurementReading:
     gauge_status: str | None
     quality: ParsedQuality
     raw_response: str
+    adc_voltage: float | None = None
+    signal_voltage: float | None = None
+    adc_raw: int | None = None

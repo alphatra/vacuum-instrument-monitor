@@ -6,6 +6,7 @@ readings in CSV or InfluxDB, and preparing live Grafana dashboards.
 Supported device profiles:
 
 - Granville-Phillips 350 (`gp350`)
+- Granville-Phillips 350 analog output via ADS1115 (`gp350`, `module_type=i2c`)
 - INFICON VGC402 (`inficon_vgc402`)
 
 The project name is intentionally wider than one controller, so more instruments
@@ -68,6 +69,20 @@ uv run python -m collectors.gp350_collector \
   --config config/examples/vgc402.ini \
   --port /dev/ttys005
 ```
+
+## GP350 Analog Output + ADS1115
+
+When a GP350 has only the analog output, read it through an ADS1115 over I2C:
+
+```bash
+uv run python -m collectors.ads1115_collector \
+  --config config/examples/gp350-analog-ads1115.ini
+```
+
+The example matches a `68 kOhm / 22 kOhm` divider on ADS1115 `A0` and writes
+both the converted pressure and diagnostic voltages to CSV/InfluxDB. Complete
+wiring, calibration and Raspberry Pi setup are in
+[docs/podlaczenie_gp350_analog_ads1115.md](docs/podlaczenie_gp350_analog_ads1115.md).
 
 ## Device Discovery
 

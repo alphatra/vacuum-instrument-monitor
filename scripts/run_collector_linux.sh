@@ -4,6 +4,7 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-/opt/vacuum-instrument-monitor}"
 PYTHON_VERSION="${PYTHON_VERSION:-3.11}"
 UV_BIN="${UV_BIN:-}"
+COLLECTOR_MODULE="${COLLECTOR_MODULE:-collectors.gp350_collector}"
 
 if [ "$#" -lt 1 ]; then
   echo "Usage: $0 /absolute/path/to/config.ini [collector args...]" >&2
@@ -38,11 +39,11 @@ fi
 
 if [ -n "$UV_BIN" ] && [ -x "$UV_BIN" ]; then
   exec "$UV_BIN" run --no-dev --python "$PYTHON_VERSION" \
-    python -m collectors.gp350_collector --config "$CONFIG_PATH" "$@"
+    python -m "$COLLECTOR_MODULE" --config "$CONFIG_PATH" "$@"
 fi
 
 if [ -x ".venv/bin/python" ]; then
-  exec ".venv/bin/python" -m collectors.gp350_collector --config "$CONFIG_PATH" "$@"
+  exec ".venv/bin/python" -m "$COLLECTOR_MODULE" --config "$CONFIG_PATH" "$@"
 fi
 
 echo "No uv or .venv Python found. Run: uv sync --no-dev" >&2

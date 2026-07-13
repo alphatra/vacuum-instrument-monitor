@@ -5,6 +5,7 @@ APP_DIR="${APP_DIR:-/opt/vacuum-instrument-monitor}"
 BRANCH="${BRANCH:-main}"
 SERVICE="${SERVICE:-vacuum-monitor-collector.service}"
 SERVICE_PATTERN="${SERVICE_PATTERN:-vacuum-monitor-collector@*.service}"
+ADS1115_SERVICE_PATTERN="${ADS1115_SERVICE_PATTERN:-vacuum-monitor-ads1115@*.service}"
 UV_BIN="${UV_BIN:-/usr/local/bin/uv}"
 
 cd "$APP_DIR"
@@ -19,9 +20,9 @@ fi
 "$UV_BIN" sync --no-dev
 
 mapfile -t units < <(
-  systemctl list-units --full --all --plain "$SERVICE_PATTERN" \
+  systemctl list-units --full --all --plain "$SERVICE_PATTERN" "$ADS1115_SERVICE_PATTERN" \
     | awk '{print $1}' \
-    | grep '^vacuum-monitor-collector@' || true
+    | grep -E '^vacuum-monitor-(collector|ads1115)@' || true
 )
 
 if [ "${#units[@]}" -gt 0 ]; then

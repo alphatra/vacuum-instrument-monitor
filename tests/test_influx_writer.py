@@ -37,6 +37,9 @@ def make_record() -> MeasurementRecord:
             gauge_status=None,
             quality=ParsedQuality.GOOD,
             raw_response='* 1.23E-06 "ok"',
+            adc_voltage=0.815,
+            signal_voltage=3.334,
+            adc_raw=6520,
         ),
     )
 
@@ -58,6 +61,9 @@ def test_influx_line_protocol_escapes_values() -> None:
     assert 'pressure_torr=1.23e-06' in line
     assert 'latency_ms=12.346' in line
     assert 'raw_response="* 1.23E-06 \\"ok\\""' in line
+    assert "adc_voltage=0.815" in line
+    assert "signal_voltage=3.334" in line
+    assert "adc_raw=6520i" in line
     assert 'unit="Torr"' in line
     assert line.endswith("1782302400000000000")
 

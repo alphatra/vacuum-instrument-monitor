@@ -13,6 +13,9 @@ CSV_HEADER = [
     "quality",
     "gauge_status",
     "raw_response",
+    "adc_voltage",
+    "signal_voltage",
+    "adc_raw",
     "latency_ms",
 ]
 
@@ -63,6 +66,9 @@ class CsvWriter:
                 record.reading.quality.value,
                 record.reading.gauge_status or "",
                 record.reading.raw_response,
+                record.reading.adc_voltage,
+                record.reading.signal_voltage,
+                record.reading.adc_raw,
                 f"{record.latency_ms:.3f}",
             ]
         )
