@@ -125,7 +125,7 @@ Jeśli usuniesz `baudrate`, `bytesize`, `parity`, `stopbits` albo `command`,
 kolektor dobierze wartości z `module_type`.
 
 Jeśli ustawisz `module_type = auto` i `serial_port = auto`, kolektor najpierw
-wykona autodetekcję. Szczegóły: `docs/autodetekcja_urzadzen.md`.
+wykona autodetekcję. Szczegóły: `autodetekcja_urzadzen.md`.
 
 RS-485:
 
@@ -230,7 +230,7 @@ token_env = INFLUXDB_TOKEN
 measurement = vacuum_pressure
 ```
 
-Szczegóły: `docs/influxdb_grafana.md`.
+Szczegóły: `influxdb_grafana.md`.
 
 ## Jakość rekordu
 

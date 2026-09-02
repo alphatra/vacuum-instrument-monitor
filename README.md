@@ -1,5 +1,7 @@
 # Vacuum Instrument Monitor
 
+[![CI](https://github.com/alphatra/vacuum-instrument-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/alphatra/vacuum-instrument-monitor/actions/workflows/ci.yml)
+
 Python toolkit for collecting serial data from vacuum instruments, storing
 readings in CSV or InfluxDB, and preparing live Grafana dashboards.
 
@@ -11,6 +13,18 @@ Supported device profiles:
 
 The project name is intentionally wider than one controller, so more instruments
 can be added later without renaming the repository.
+
+## Start here
+
+**Obsługujesz pomiar na co dzień (uruchomienie, podłączenie sprzętu,
+diagnostyka) — bez programowania?**
+→ [docs/operations/](docs/operations/README.md)
+
+**Rozwijasz kod, dodajesz urządzenie, czytasz architekturę?**
+→ [docs/development/](docs/development/README.md)
+
+Reszta tego pliku to szybki start dla osób technicznych (symulatory,
+komendy deweloperskie).
 
 ## Setup
 
@@ -82,7 +96,7 @@ uv run python -m collectors.ads1115_collector \
 The example matches a `68 kOhm / 22 kOhm` divider on ADS1115 `A0` and writes
 both the converted pressure and diagnostic voltages to CSV/InfluxDB. Complete
 wiring, calibration and Raspberry Pi setup are in
-[docs/podlaczenie_gp350_analog_ads1115.md](docs/podlaczenie_gp350_analog_ads1115.md).
+[docs/operations/gp350-analog-ads1115-wiring.md](docs/operations/gp350-analog-ads1115-wiring.md).
 
 ## Device Discovery
 
@@ -134,42 +148,24 @@ GP350:
 
 ## Development
 
-Run checks:
+Run checks (same as CI):
 
 ```bash
 uv run pytest
 uv run ruff check .
+uv run ruff format --check .
 uv run pyrefly check
 ```
 
 ## Documentation
 
-Polish project walkthrough with diagrams:
-[docs/dzialanie.md](docs/dzialanie.md)
+Full docs are split by audience — see [Start here](#start-here) above.
 
-Collector design plan in Polish:
-[docs/kolektor_danych.md](docs/kolektor_danych.md)
-
-Collector configuration scenarios:
-[docs/scenariusze_konfiguracji.md](docs/scenariusze_konfiguracji.md)
-
-Real GP350 wiring and DIP switch checklist:
-[docs/podlaczenie_gp350.md](docs/podlaczenie_gp350.md)
-
-InfluxDB + Grafana setup:
-[docs/influxdb_grafana.md](docs/influxdb_grafana.md)
-
-Automatic serial device discovery:
-[docs/autodetekcja_urzadzen.md](docs/autodetekcja_urzadzen.md)
-
-Device profile layer:
-[docs/warstwa_urzadzen.md](docs/warstwa_urzadzen.md)
-
-Linux runner, systemd autostart, external InfluxDB/Grafana:
-[docs/linux_systemd_runner.md](docs/linux_systemd_runner.md)
-
-Acceptance tests:
-[docs/acceptance_tests.md](docs/acceptance_tests.md)
+- [docs/operations/](docs/operations/README.md) — operation,
+  wiring, troubleshooting, config changes. No programming needed.
+- [docs/development/](docs/development/README.md) — architecture,
+  protocols, device profile layer, systemd/binary deployment, acceptance
+  tests.
 
 Grafana dashboard:
 [grafana/vacuum-dashboard.json](grafana/vacuum-dashboard.json)

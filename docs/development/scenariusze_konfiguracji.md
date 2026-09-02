@@ -95,7 +95,7 @@ pressure_unit = Torr
 csv_filepath = data/gp350_loadlock.csv
 ```
 
-Szczegóły: `docs/autodetekcja_urzadzen.md`.
+Szczegóły: `autodetekcja_urzadzen.md`.
 
 ## 2. Prawdziwy GP350 - RS-232 Module
 
@@ -252,7 +252,7 @@ Uruchom przed kolektorem:
 export INFLUXDB_TOKEN="..."
 ```
 
-Grafana query i panele: `docs/influxdb_grafana.md`.
+Grafana query i panele: `influxdb_grafana.md`.
 
 ## 9. Debug komunikacji
 
