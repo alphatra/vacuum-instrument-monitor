@@ -53,6 +53,9 @@ if [ ! -f "$CONFIG_DIR/${INSTANCE}.ini" ]; then
   fi
 fi
 
+APP_DIR="$APP_DIR" SERVICE_USER="$SERVICE_USER" CONFIG_DIR="$CONFIG_DIR" \
+  "$APP_DIR/scripts/prepare_runtime.sh"
+
 systemctl daemon-reload
 systemctl enable "vacuum-monitor-collector@${INSTANCE}.service"
 systemctl restart "vacuum-monitor-collector@${INSTANCE}.service"

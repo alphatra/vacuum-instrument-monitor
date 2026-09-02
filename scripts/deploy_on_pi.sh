@@ -14,10 +14,13 @@ git fetch origin "$BRANCH"
 git reset --hard "origin/$BRANCH"
 
 if [ ! -x "$UV_BIN" ]; then
-  curl -LsSf https://astral.sh/uv/install.sh | sh
+  curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin sh
 fi
 
-"$UV_BIN" sync --no-dev
+# Rebuilds .venv with the system interpreter and restores SERVICE_USER
+# ownership. A plain `uv sync` here would leave .venv owned by root and the
+# service would fail on start.
+APP_DIR="$APP_DIR" UV_BIN="$UV_BIN" "$APP_DIR/scripts/prepare_runtime.sh"
 
 mapfile -t units < <(
   systemctl list-units --full --all --plain "$SERVICE_PATTERN" "$ADS1115_SERVICE_PATTERN" \

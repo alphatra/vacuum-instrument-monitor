@@ -47,6 +47,9 @@ if [ ! -f "$CONFIG_DIR/${INSTANCE}.ini" ]; then
   install -m 0644 "$EXAMPLE_CONFIG" "$CONFIG_DIR/${INSTANCE}.ini"
 fi
 
+APP_DIR="$APP_DIR" SERVICE_USER="$SERVICE_USER" CONFIG_DIR="$CONFIG_DIR" \
+  "$APP_DIR/scripts/prepare_runtime.sh"
+
 systemctl daemon-reload
 systemctl enable "vacuum-monitor-ads1115@${INSTANCE}.service"
 systemctl restart "vacuum-monitor-ads1115@${INSTANCE}.service"

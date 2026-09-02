@@ -17,6 +17,8 @@ rozwijać kod), zajrzyj do [../development/](../development/README.md).
    zanim zawołasz programistę.
 4. [Zmiana konfiguracji](04-configuration.md) —
    co wolno samodzielnie zmienić w pliku ustawień, a czego nie ruszać.
+5. [Instalacja na nowym Raspberry Pi](05-installation.md) —
+   od świeżego systemu do samostartującego pomiaru.
 
 Szczegółowe schematy podłączenia (osobno dla każdego urządzenia):
 

@@ -27,6 +27,14 @@ fi
 cd "$APP_DIR"
 mkdir -p data logs
 
+# Prefer .venv directly. Under systemd the unit sets ProtectHome=true, so uv
+# cannot reach its cache in $HOME; .venv needs no cache, no network and no
+# managed interpreter. scripts/prepare_runtime.sh builds it. uv stays as the
+# fallback for manual runs on a machine where .venv was never created.
+if [ -x ".venv/bin/python" ]; then
+  exec ".venv/bin/python" -m "$COLLECTOR_MODULE" --config "$CONFIG_PATH" "$@"
+fi
+
 if [ -z "$UV_BIN" ]; then
   if command -v uv >/dev/null 2>&1; then
     UV_BIN="$(command -v uv)"
@@ -42,9 +50,5 @@ if [ -n "$UV_BIN" ] && [ -x "$UV_BIN" ]; then
     python -m "$COLLECTOR_MODULE" --config "$CONFIG_PATH" "$@"
 fi
 
-if [ -x ".venv/bin/python" ]; then
-  exec ".venv/bin/python" -m "$COLLECTOR_MODULE" --config "$CONFIG_PATH" "$@"
-fi
-
-echo "No uv or .venv Python found. Run: uv sync --no-dev" >&2
+echo "No .venv or uv Python found. Run: sudo scripts/prepare_runtime.sh" >&2
 exit 127
