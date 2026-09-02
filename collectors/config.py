@@ -117,17 +117,25 @@ class AppConfig:
             if serial_port_override:
                 serial_port = serial_port_override
 
-            module_type = config.get(
-                "Connection",
-                "module_type",
-                fallback=defaults.module_type,
-            ).strip().lower()
+            module_type = (
+                config.get(
+                    "Connection",
+                    "module_type",
+                    fallback=defaults.module_type,
+                )
+                .strip()
+                .lower()
+            )
 
-            device_type = config.get(
-                "Device",
-                "device_type",
-                fallback=defaults.device_type,
-            ).strip().lower()
+            device_type = (
+                config.get(
+                    "Device",
+                    "device_type",
+                    fallback=defaults.device_type,
+                )
+                .strip()
+                .lower()
+            )
             if device_type not in DEVICE_TYPES:
                 raise ConfigValidationError(
                     "device_type musi mieć wartość auto, gp350 albo inficon_vgc402"

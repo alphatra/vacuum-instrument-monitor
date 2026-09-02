@@ -194,9 +194,7 @@ class Ads1115Config:
                     "ADS1115", "channel", fallback=defaults.ads_channel
                 ),
                 pga_gain=_normalize_pga_gain(
-                    config.getfloat(
-                        "ADS1115", "pga_gain", fallback=defaults.pga_gain
-                    )
+                    config.getfloat("ADS1115", "pga_gain", fallback=defaults.pga_gain)
                 ),
                 data_rate=config.getint(
                     "ADS1115", "data_rate", fallback=defaults.data_rate

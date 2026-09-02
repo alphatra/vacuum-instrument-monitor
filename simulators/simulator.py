@@ -406,9 +406,8 @@ class GP350Simulator:
         self.degas_active = False
 
     def _ion_gauge_active(self) -> bool:
-        return (
-            self.gauge_status == GaugeStatus.ON
-            and (self.filament_1_on or self.filament_2_on)
+        return self.gauge_status == GaugeStatus.ON and (
+            self.filament_1_on or self.filament_2_on
         )
 
     def _filament_active(self, filament_number: int) -> bool:

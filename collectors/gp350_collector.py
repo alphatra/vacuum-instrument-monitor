@@ -92,9 +92,7 @@ def open_client(cfg: AppConfig) -> SerialClient:
 
 def build_serial_command(cfg: AppConfig) -> str:
     command = (
-        cfg.command.upper()
-        if cfg.device_type == VGC402_DEVICE_TYPE
-        else cfg.command
+        cfg.command.upper() if cfg.device_type == VGC402_DEVICE_TYPE else cfg.command
     )
     if cfg.rs485_address is None:
         return command

@@ -145,9 +145,7 @@ def test_discover_inficon_vgc402_devices_detects_ack_enq_protocol() -> None:
 
 def test_discover_inficon_vgc402_devices_scans_all_manual_baudrates() -> None:
     FakeSerial.responses = {
-        ("/dev/cu.usbserial-VGC", 38400, b"PR1\r\n"): f"{ACK}\r\n".encode(
-            "ascii"
-        ),
+        ("/dev/cu.usbserial-VGC", 38400, b"PR1\r\n"): f"{ACK}\r\n".encode("ascii"),
         ("/dev/cu.usbserial-VGC", 38400, ENQ): b"0,3.84E-06\r\n",
     }
 
