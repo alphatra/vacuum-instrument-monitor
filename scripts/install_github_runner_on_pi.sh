@@ -43,7 +43,7 @@ if [ ! -x ./config.sh ]; then
 fi
 
 cat >/etc/sudoers.d/vacuum-monitor-deploy <<EOF
-${RUNNER_USER} ALL=(root) NOPASSWD: /usr/local/sbin/vacuum-monitor-deploy
+${RUNNER_USER} ALL=(root) NOPASSWD: SETENV: /usr/local/sbin/vacuum-monitor-deploy
 EOF
 chmod 440 /etc/sudoers.d/vacuum-monitor-deploy
 

@@ -1,9 +1,10 @@
 name: Deploy Raspberry Pi
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
   workflow_dispatch:
 
 concurrency:
@@ -12,6 +13,9 @@ concurrency:
 
 jobs:
   deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on:
       - self-hosted
       - Linux
@@ -19,4 +23,8 @@ jobs:
       - meterdevicepi
     steps:
       - name: Deploy on Raspberry Pi
-        run: sudo /usr/local/sbin/vacuum-monitor-deploy
+        # Deploy the exact commit CI verified (workflow_run.head_sha); a manual
+        # dispatch deploys github.sha, the commit the run was started on.
+        run: >-
+          sudo TARGET_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          /usr/local/sbin/vacuum-monitor-deploy

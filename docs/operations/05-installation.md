@@ -127,12 +127,21 @@ serial_port = /dev/vacuum-arduino
 
 ## Aktualizacja do nowszej wersji
 
+Deploy uruchamia się automatycznie: workflow GitHub Actions `Deploy Raspberry
+Pi` czeka na zakończenie workflow `CI` dla commita na `main` i wdraża
+dokładnie ten commit, który przeszedł testy — nigdy aktualny czub gałęzi.
+
+Ręczne uruchomienie z GitHuba (Actions → Deploy Raspberry Pi → Run workflow)
+wdraża commit, na którym uruchomiono workflow. Bezpośrednio na Pi commit
+trzeba podać jawnie:
+
 ```bash
 cd /opt/vacuum-instrument-monitor
-sudo scripts/deploy_on_pi.sh
+sudo TARGET_SHA=<commit> scripts/deploy_on_pi.sh
 ```
 
-Pobiera najnowszy kod, przebudowuje środowisko i restartuje działające usługi.
+Skrypt pobiera wskazany commit, przebudowuje środowisko i restartuje
+działające usługi. Katalogi `data/` i `logs/` pozostają nietknięte.
 
 ## Dlaczego instalator robi więcej niż `git clone`
 
