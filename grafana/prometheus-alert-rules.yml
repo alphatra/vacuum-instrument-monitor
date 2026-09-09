@@ -1,0 +1,74 @@
+groups:
+  - name: vacuum-monitor
+    interval: 1m
+    rules:
+      - alert: VacuumCollectorNoData
+        expr: |
+          absent_over_time(
+            vacuum_pressure_latency_ms{device="VGC402_1"}[5m]
+          ) == 1
+        for: 1m
+        labels:
+          severity: critical
+          device: VGC402_1
+        annotations:
+          summary: VGC402_1 collector has no data
+          description: No latency sample received from VGC402_1 for 5 minutes.
+
+      - alert: VacuumReadingTimeout
+        expr: |
+          sum by (device, channel) (
+            count_over_time(
+              vacuum_pressure_latency_ms{quality="timeout"}[2m]
+            )
+          ) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Vacuum instrument read timeout
+          description: "{{ $labels.device }} {{ $labels.channel }} timed out."
+
+      - alert: VacuumReadingBadFormat
+        expr: |
+          sum by (device, channel) (
+            count_over_time(
+              vacuum_pressure_latency_ms{quality="bad_format"}[2m]
+            )
+          ) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Vacuum instrument returned malformed data
+          description: "{{ $labels.device }} {{ $labels.channel }} returned malformed data."
+
+      - alert: VacuumSensorOff
+        expr: |
+          sum by (device, channel) (
+            count_over_time(
+              vacuum_pressure_latency_ms{gauge_status="sensor_off"}[2m]
+            )
+          ) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Vacuum sensor is off
+          description: "{{ $labels.device }} {{ $labels.channel }} reports sensor_off."
+
+      - alert: VacuumSensorHardwareError
+        expr: |
+          sum by (device, channel) (
+            count_over_time(
+              vacuum_pressure_latency_ms{
+                gauge_status=~"sensor_error|identification_error|bpg_bcg_hpg_error|device_error.*|.*hardware_not_installed.*"
+              }[2m]
+            )
+          ) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Vacuum sensor hardware error
+          description: "{{ $labels.device }} {{ $labels.channel }} reports {{ $labels.gauge_status }}."

@@ -52,6 +52,8 @@ def build_influx_writer(cfg: Ads1115Config) -> InfluxWriter | None:
             device_type="gp350",
             module_type="i2c",
             command="analog_output",
+            username=cfg.influx_username,
+            write_path=cfg.influx_write_path,
         )
     )
 

@@ -46,6 +46,9 @@ fail_on_error = false
 `fail_on_error = false` oznacza: gdy InfluxDB chwilowo padnie, kolektor nadal
 zapisuje CSV i loguje błąd InfluxDB.
 
+`retries` dotyczy awarii transportu, HTTP `429` i HTTP `5xx`. Błędy trwałe
+HTTP `4xx`, np. `401` dla złego tokenu, kończą próbę od razu.
+
 ## 3. Dane w InfluxDB
 
 Measurement:
@@ -106,9 +109,12 @@ vacuum_pressure_latency_ms
 vacuum_pressure_is_good
 ```
 
-Pola tekstowe (`raw_response`, `unit`, `gauge_status`) są pomijane, bo
-Prometheus nie przechowuje wartości tekstowych. W CSV zostają komplet.
-Zapytania pisz w PromQL, nie we Fluxie.
+Pola tekstowe (`raw_response`, `unit`, `gauge_status`) nie tworzą osobnych
+metryk Prometheus. Znane, ograniczone wartości `gauge_status` są dodatkowo
+wysyłane jako label każdej metryki, np. `gauge_status="sensor_off"`. Dowolny
+tekst nigdy nie staje się labelem, więc nie zwiększa niekontrolowanie
+cardinality. W CSV pola zostają kompletne. Zapytania pisz w PromQL, nie we
+Fluxie.
 
 ## 4. Grafana query
 

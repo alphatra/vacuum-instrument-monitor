@@ -1,4 +1,5 @@
 import csv
+import http.server
 import queue
 import signal
 import subprocess
@@ -235,3 +236,108 @@ log_file = {log_path}
         if collector_process is not None:
             _stop_process(collector_process)
         _stop_process(virtual_process)
+
+
+def test_collector_keeps_csv_when_grafana_cloud_is_unavailable(
+    tmp_path: Path,
+) -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    csv_path = tmp_path / "grafana-failure.csv"
+    log_path = tmp_path / "grafana-failure.log"
+    config_path = tmp_path / "grafana-failure.ini"
+    requests: list[str] = []
+
+    class UnavailableHandler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            requests.append(self.headers.get("Authorization", ""))
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(b"unavailable")
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), UnavailableHandler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    server_port = server.server_address[1]
+    config_path.write_text(
+        f"""
+[General]
+log_level = error
+
+[Connection]
+module_type = digital
+serial_port = /dev/not-used
+
+[Collector]
+interval_seconds = 0.1
+
+[File]
+csv_filepath = {csv_path}
+csv_mode = overwrite
+log_file = {log_path}
+
+[InfluxDB]
+enabled = true
+url = http://127.0.0.1:{server_port}
+username = 123456
+write_path = /api/v1/push/influx/write
+token = test-secret-not-for-logs
+measurement = vacuum_pressure
+retries = 0
+fail_on_error = false
+""",
+        encoding="utf-8",
+    )
+
+    virtual_process = subprocess.Popen(
+        [sys.executable, "-u", "virtual_gp350.py"],
+        cwd=project_root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    collector_process: subprocess.Popen[str] | None = None
+
+    try:
+        virtual_lines = _read_lines(virtual_process)
+        serial_port = _wait_for_virtual_port(
+            virtual_lines,
+            marker="Virtual GP350 command port created:",
+        )
+        collector_process = subprocess.Popen(
+            [
+                sys.executable,
+                "-u",
+                "-m",
+                "collectors.gp350_collector",
+                "--config",
+                str(config_path),
+                "--port",
+                serial_port,
+            ],
+            cwd=project_root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+
+        row = _wait_for_csv_rows(csv_path)[0]
+
+        request_deadline = time.monotonic() + 2
+        while not requests and time.monotonic() < request_deadline:
+            time.sleep(0.01)
+
+        assert row[3]
+        assert row[5] == "good"
+        assert requests
+    finally:
+        if collector_process is not None:
+            _stop_process(collector_process)
+        _stop_process(virtual_process)
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=2)
+
+    assert "test-secret-not-for-logs" not in log_path.read_text(encoding="utf-8")

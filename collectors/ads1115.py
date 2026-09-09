@@ -11,7 +11,12 @@ from typing import Protocol
 
 from smbus2 import SMBus
 
-from collectors.analog import GP350_ANALOG_EMISSION_OFFSETS
+from collectors.analog import (
+    GP350_ANALOG_EMISSION_OFFSETS,
+    divider_ratio,
+    emission_voltage_offset,
+    reading_from_adc_voltage,
+)
 from collectors.config import ConfigValidationError
 from collectors.measurements import MeasurementReading
 from simulators.enums import ParsedQuality
@@ -151,6 +156,8 @@ class Ads1115Config:
     influx_bucket: str = ""
     influx_token: str = ""
     influx_token_env: str = "INFLUXDB_TOKEN"
+    influx_username: str = ""
+    influx_write_path: str = "/api/v2/write"
     influx_measurement: str = "vacuum_pressure"
     influx_timeout: float = 2.0
     influx_retries: int = 0
@@ -256,6 +263,16 @@ class Ads1115Config:
                     "token_env",
                     fallback=defaults.influx_token_env,
                 ).strip(),
+                influx_username=config.get(
+                    "InfluxDB",
+                    "username",
+                    fallback=defaults.influx_username,
+                ).strip(),
+                influx_write_path=config.get(
+                    "InfluxDB",
+                    "write_path",
+                    fallback=defaults.influx_write_path,
+                ).strip(),
                 influx_measurement=config.get(
                     "InfluxDB",
                     "measurement",
@@ -284,13 +301,11 @@ class Ads1115Config:
 
     @property
     def divider_ratio(self) -> float:
-        return (self.divider_top_ohms + self.divider_bottom_ohms) / (
-            self.divider_bottom_ohms
-        )
+        return divider_ratio(self.divider_top_ohms, self.divider_bottom_ohms)
 
     @property
     def emission_voltage_offset(self) -> float:
-        return GP350_ANALOG_EMISSION_OFFSETS[self.emission_current_ma]
+        return emission_voltage_offset(self.emission_current_ma)
 
     @property
     def resolved_influx_token(self) -> str:
@@ -347,7 +362,9 @@ class Ads1115Config:
                 raise ConfigValidationError(
                     "InfluxDB.url musi zaczynać się od http:// albo https://"
                 )
-            if not self.influx_org or not self.influx_bucket:
+            if not self.influx_username and (
+                not self.influx_org or not self.influx_bucket
+            ):
                 raise ConfigValidationError(
                     "InfluxDB.org i InfluxDB.bucket nie mogą być puste"
                 )
@@ -375,13 +392,12 @@ def read_gp350_analog(
     )
     adc_voltage = raw_value * adc.lsb_volts
     signal_voltage = adc_voltage * cfg.divider_ratio
-    calibrated_voltage = signal_voltage + cfg.signal_voltage_offset
     raw_response = (
         f"adc_raw={raw_value},adc_voltage={adc_voltage:.6f},"
         f"signal_voltage={signal_voltage:.6f}"
     )
 
-    if raw_value < 0 or raw_value >= 32760:
+    if raw_value >= 32760:
         return MeasurementReading(
             pressure_torr=None,
             unit=None,
@@ -393,30 +409,13 @@ def read_gp350_analog(
             adc_raw=raw_value,
         )
 
-    if calibrated_voltage >= cfg.fault_voltage_threshold:
-        return MeasurementReading(
-            pressure_torr=None,
-            unit=None,
-            gauge_status="gauge_off_or_overrange",
-            quality=ParsedQuality.ERROR,
-            raw_response=raw_response,
-            adc_voltage=adc_voltage,
-            signal_voltage=signal_voltage,
-            adc_raw=raw_value,
-        )
-
-    pressure_torr = math.pow(
-        10.0,
-        calibrated_voltage - cfg.emission_voltage_offset,
-    )
-    return MeasurementReading(
-        pressure_torr=pressure_torr,
-        unit="Torr",
-        gauge_status="ok",
-        quality=ParsedQuality.GOOD,
+    return reading_from_adc_voltage(
+        adc_voltage,
+        ratio=cfg.divider_ratio,
+        signal_voltage_offset=cfg.signal_voltage_offset,
+        emission_offset=cfg.emission_voltage_offset,
+        fault_voltage_threshold=cfg.fault_voltage_threshold,
         raw_response=raw_response,
-        adc_voltage=adc_voltage,
-        signal_voltage=signal_voltage,
         adc_raw=raw_value,
     )
 

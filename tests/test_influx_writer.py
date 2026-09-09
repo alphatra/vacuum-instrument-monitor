@@ -1,5 +1,7 @@
+import base64
 import io
 import urllib.error
+from dataclasses import replace
 from email.message import Message
 
 import pytest
@@ -68,6 +70,41 @@ def test_influx_line_protocol_escapes_values() -> None:
     assert line.endswith("1782302400000000000")
 
 
+def test_gauge_status_is_bounded_prometheus_label() -> None:
+    record = make_record()
+    record = replace(
+        record,
+        reading=replace(
+            record.reading,
+            pressure_torr=None,
+            gauge_status="sensor_off",
+            quality=ParsedQuality.ERROR,
+        ),
+    )
+
+    line = InfluxWriter(make_config()).to_line_protocol(record)
+
+    tags = line[: line.index(" latency_ms=")]
+    assert "gauge_status=sensor_off" in tags
+
+
+def test_arbitrary_gauge_status_is_not_prometheus_label() -> None:
+    record = make_record()
+    record = replace(
+        record,
+        reading=replace(
+            record.reading,
+            gauge_status="device said 3.1 V at 2026-06-24",
+        ),
+    )
+
+    line = InfluxWriter(make_config()).to_line_protocol(record)
+
+    tags = line[: line.index(" pressure_torr=")]
+    assert "gauge_status=" not in tags
+    assert 'gauge_status="device said 3.1 V at 2026-06-24"' in line
+
+
 def test_influx_writer_posts_line_protocol(monkeypatch) -> None:
     calls: list[tuple[str, bytes, dict[str, str], float]] = []
 
@@ -124,3 +161,102 @@ def test_influx_writer_raises_on_http_error(monkeypatch) -> None:
 
     with pytest.raises(InfluxWriteError):
         writer.write(make_record())
+
+
+def test_grafana_cloud_posts_with_basic_auth_and_no_influx_query(monkeypatch) -> None:
+    calls = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            pass
+
+        def getcode(self) -> int:
+            return 204
+
+    def fake_urlopen(request, timeout):
+        calls.append((request, timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr("collectors.influx_writer.urllib.request.urlopen", fake_urlopen)
+    config = replace(
+        make_config(),
+        url="https://prometheus-prod.example.grafana.net",
+        org="",
+        bucket="",
+        username="123456",
+        write_path="/api/v1/push/influx/write",
+    )
+
+    InfluxWriter(config).write(make_record())
+
+    request, timeout = calls[0]
+    expected = base64.b64encode(b"123456:secret").decode("ascii")
+    assert request.full_url == (
+        "https://prometheus-prod.example.grafana.net/api/v1/push/influx/write"
+    )
+    assert "?" not in request.full_url
+    assert request.get_header("Authorization") == f"Basic {expected}"
+    assert request.data.decode("utf-8").startswith("gp350\\ reading,")
+    assert timeout == 2.0
+
+
+def test_grafana_cloud_does_not_retry_unauthorized(monkeypatch) -> None:
+    attempts = 0
+
+    def fake_urlopen(request, timeout):
+        nonlocal attempts
+        attempts += 1
+        raise urllib.error.HTTPError(
+            url=request.full_url,
+            code=401,
+            msg="Unauthorized",
+            hdrs=Message(),
+            fp=io.BytesIO(b"bad credentials"),
+        )
+
+    monkeypatch.setattr("collectors.influx_writer.urllib.request.urlopen", fake_urlopen)
+    config = replace(make_config(), retries=2)
+
+    with pytest.raises(InfluxWriteError, match="HTTP 401"):
+        InfluxWriter(config).write(make_record())
+
+    assert attempts == 1
+
+
+@pytest.mark.parametrize("status", [429, 500])
+def test_influx_writer_retries_transient_http_errors(monkeypatch, status) -> None:
+    attempts = 0
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            pass
+
+        def getcode(self) -> int:
+            return 204
+
+    def fake_urlopen(request, timeout):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise urllib.error.HTTPError(
+                url=request.full_url,
+                code=status,
+                msg="temporary failure",
+                hdrs=Message(),
+                fp=io.BytesIO(b"retry later"),
+            )
+        return FakeResponse()
+
+    monkeypatch.setattr("collectors.influx_writer.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("collectors.influx_writer.time.sleep", lambda _: None)
+    config = replace(make_config(), retries=2)
+
+    InfluxWriter(config).write(make_record())
+
+    assert attempts == 3

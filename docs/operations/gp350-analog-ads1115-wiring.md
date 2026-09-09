@@ -65,6 +65,8 @@ Najważniejsze ustawienia:
 - `pga_gain = 1` wybiera zakres ADS1115 +/-4.096 V; A0 nadal nie może być
   wyższe niż napięcie zasilania ADS1115.
 - Ustaw poświadczenia InfluxDB tak samo jak dla VGC402 i ustaw `enabled = true`.
+- Dla Grafana Cloud ustaw także `username` oraz
+  `write_path = /api/v1/push/influx/write`; `org` i `bucket` mogą zostać puste.
 
 GP350 daje 1 V na dekadę. Kolektor stosuje wzory z instrukcji GP350:
 

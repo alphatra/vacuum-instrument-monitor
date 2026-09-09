@@ -1,5 +1,20 @@
 # Alert rules for Grafana Cloud
 
+For Grafana Cloud Prometheus/Mimir use
+`grafana/prometheus-alert-rules.yml`. It contains tested PromQL contracts for:
+
+- missing VGC402 collector data,
+- read timeout,
+- malformed response,
+- sensor off,
+- sensor hardware errors.
+
+The no-data rule names `VGC402_1` explicitly because Prometheus cannot recover
+a missing series label. Copy that rule and change `device` for each collector
+that must be monitored independently.
+
+The Flux examples below remain for dashboards connected directly to InfluxDB.
+
 Use data source: InfluxDB, query language: Flux.
 
 Variables to replace:

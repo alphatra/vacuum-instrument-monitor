@@ -471,7 +471,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "count by (quality) (vacuum_pressure_latency_ms{device=~\"$device\"})",
+          "expr": "sum by (quality) (count_over_time(vacuum_pressure_latency_ms{device=~\"$device\"}[$__interval]))",
           "legendFormat": "{{quality}}",
           "range": true,
           "instant": false,
@@ -645,7 +645,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(vacuum_pressure_pressure_torr{device!=\"TEST\"}, device)",
+        "definition": "label_values(vacuum_pressure_latency_ms{device!=\"TEST\"}, device)",
         "hide": 0,
         "includeAll": true,
         "label": "Urządzenie",
@@ -653,7 +653,7 @@
         "name": "device",
         "options": [],
         "query": {
-          "query": "label_values(vacuum_pressure_pressure_torr{device!=\"TEST\"}, device)",
+          "query": "label_values(vacuum_pressure_latency_ms{device!=\"TEST\"}, device)",
           "refId": "DeviceVariable"
         },
         "refresh": 2,

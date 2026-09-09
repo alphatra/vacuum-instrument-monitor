@@ -3,6 +3,9 @@ import math
 import pytest
 
 from collectors.ads1115 import ADS1115, Ads1115Config, read_gp350_analog
+from collectors.ads1115_collector import build_influx_writer
+from collectors.arduino_adc import ArduinoAdcParser
+from collectors.config import AppConfig
 from simulators.enums import ParsedQuality
 
 
@@ -115,3 +118,58 @@ emission_current_ma = 10
     assert cfg.ads_channel == 2
     assert cfg.divider_ratio == pytest.approx(90 / 22)
     assert cfg.emission_voltage_offset == 12.0
+
+
+def test_ads1115_supports_grafana_cloud_writer_config(tmp_path) -> None:
+    config_path = tmp_path / "gp350-analog-grafana.ini"
+    config_path.write_text(
+        """
+[InfluxDB]
+enabled = true
+url = https://prometheus-prod.example.grafana.net
+username = 123456
+write_path = /api/v1/push/influx/write
+token = test-token
+measurement = vacuum_pressure
+""",
+        encoding="utf-8",
+    )
+
+    cfg = Ads1115Config.from_file(str(config_path))
+    writer = build_influx_writer(cfg)
+
+    assert writer is not None
+    assert writer.write_url == (
+        "https://prometheus-prod.example.grafana.net/api/v1/push/influx/write"
+    )
+    assert writer.config.username == "123456"
+    assert writer.config.org == ""
+    assert writer.config.bucket == ""
+
+
+@pytest.mark.parametrize("raw_value", [16_000, 10_000, 6_000, 20_200, -100])
+def test_ads1115_and_arduino_analog_conversion_have_parity(raw_value) -> None:
+    ads_config = Ads1115Config(
+        samples_per_reading=1,
+        divider_top_ohms=3,
+        divider_bottom_ohms=1,
+        emission_current_ma=1,
+        fault_voltage_threshold=10.05,
+    )
+    arduino_config = AppConfig(
+        divider_top_ohms=3,
+        divider_bottom_ohms=1,
+        emission_current_ma=1,
+        fault_voltage_threshold=10.05,
+    )
+    adc_voltage = raw_value * FakeAdc.lsb_volts
+
+    ads_reading = read_gp350_analog(FakeAdc(raw_value), ads_config)
+    arduino_reading = ArduinoAdcParser.parse(
+        f"V={adc_voltage:.6f}",
+        arduino_config,
+    )
+
+    assert ads_reading.pressure_torr == pytest.approx(arduino_reading.pressure_torr)
+    assert ads_reading.quality is arduino_reading.quality
+    assert ads_reading.gauge_status == arduino_reading.gauge_status

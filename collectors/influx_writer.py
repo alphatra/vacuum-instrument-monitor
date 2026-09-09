@@ -8,9 +8,36 @@ from dataclasses import dataclass
 
 from collectors.csv_writer import MeasurementRecord
 
+GAUGE_STATUS_LABELS = {
+    "ok",
+    "underrange",
+    "overrange",
+    "sensor_error",
+    "sensor_off",
+    "no_sensor",
+    "identification_error",
+    "bpg_bcg_hpg_error",
+    "no_error",
+    "nak",
+    "adc_underrange",
+    "adc_overrange",
+    "gauge_off_or_overrange",
+    "i2c_error",
+}
+GAUGE_STATUS_NAK_BITS = {
+    "device_error",
+    "hardware_not_installed",
+    "parameter_invalid",
+    "syntax_error",
+}
+
 
 class InfluxWriteError(Exception):
     """Raised when writing to InfluxDB fails."""
+
+    def __init__(self, message: str, *, retryable: bool = False):
+        super().__init__(message)
+        self.retryable = retryable
 
 
 @dataclass(frozen=True)
@@ -65,6 +92,19 @@ def _timestamp_to_ns(timestamp: str) -> int:
     return int(parsed.timestamp() * 1_000_000_000)
 
 
+def _bounded_gauge_status(value: str | None) -> str | None:
+    if not value:
+        return None
+    if value in GAUGE_STATUS_LABELS:
+        return value
+
+    parts = value.split("+")
+    if len(parts) == len(set(parts)) and set(parts) <= GAUGE_STATUS_NAK_BITS:
+        return value
+
+    return None
+
+
 class InfluxWriter:
     def __init__(self, config: InfluxConfig):
         self.config = config
@@ -94,6 +134,8 @@ class InfluxWriter:
                 return
             except Exception as error:
                 last_error = error
+                if isinstance(error, InfluxWriteError) and not error.retryable:
+                    break
                 if attempt < self.config.retries:
                     time.sleep(min(0.25 * (attempt + 1), 2.0))
 
@@ -109,6 +151,9 @@ class InfluxWriter:
             _format_tag("module_type", self.config.module_type),
             _format_tag("command", self.config.command),
         ]
+        gauge_status_label = _bounded_gauge_status(reading.gauge_status)
+        if gauge_status_label is not None:
+            tags.append(_format_tag("gauge_status", gauge_status_label))
 
         fields = [
             f"latency_ms={record.latency_ms:.3f}",
@@ -165,11 +210,15 @@ class InfluxWriter:
         except urllib.error.HTTPError as error:
             body = error.read().decode("utf-8", errors="replace")
             raise InfluxWriteError(
-                f"InfluxDB HTTP {error.code}: {body or error.reason}"
+                f"InfluxDB HTTP {error.code}: {body or error.reason}",
+                retryable=error.code == 429 or error.code >= 500,
             ) from error
 
         if status < 200 or status >= 300:
-            raise InfluxWriteError(f"InfluxDB HTTP {status}")
+            raise InfluxWriteError(
+                f"InfluxDB HTTP {status}",
+                retryable=status == 429 or status >= 500,
+            )
 
     def close(self) -> None:
         pass
