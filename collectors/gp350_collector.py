@@ -1,5 +1,6 @@
 # ruff: noqa: E402, I001
 import argparse
+import contextlib
 import datetime
 import logging
 import os
@@ -258,6 +259,79 @@ def influx_settings_changed(old_cfg: AppConfig, new_cfg: AppConfig) -> bool:
     )
 
 
+def serial_settings_changed(old_cfg: AppConfig, new_cfg: AppConfig) -> bool:
+    return (
+        new_cfg.serial_port != old_cfg.serial_port
+        or new_cfg.baudrate != old_cfg.baudrate
+        or new_cfg.bytesize != old_cfg.bytesize
+        or new_cfg.parity != old_cfg.parity
+        or new_cfg.stopbits != old_cfg.stopbits
+        or new_cfg.line_terminator != old_cfg.line_terminator
+        or new_cfg.rs485_address != old_cfg.rs485_address
+        or new_cfg.timeout != old_cfg.timeout
+        or new_cfg.write_timeout != old_cfg.write_timeout
+        or new_cfg.device_type != old_cfg.device_type
+    )
+
+
+def apply_new_config(
+    cfg: AppConfig,
+    new_cfg: AppConfig,
+    client: SerialClient | None,
+    writer: CsvWriter | None,
+    influx_writer: InfluxWriter | None,
+) -> tuple[AppConfig, SerialClient | None, CsvWriter | None, InfluxWriter | None]:
+    """Swap runtime resources over to new_cfg.
+
+    Raises if any new resource cannot be opened; the caller keeps running on
+    the previous config in that case.
+    """
+    # Open every replacement first and only then retire the old ones, so a
+    # config that cannot be opened leaves the running collector untouched.
+    opened: list[object] = []
+    new_client = client
+    new_writer = writer
+    new_influx = influx_writer
+
+    try:
+        if serial_settings_changed(cfg, new_cfg):
+            new_client = open_client(new_cfg)
+            opened.append(new_client)
+
+        if new_client is None:
+            raise RuntimeError("collector serial client is not open")
+
+        new_cfg = resolve_runtime_config(new_cfg, new_client)
+
+        if (
+            new_cfg.csv_filepath != cfg.csv_filepath or new_cfg.csv_mode != cfg.csv_mode
+        ) and writer is not None:
+            new_writer = CsvWriter(new_cfg.csv_filepath, mode=new_cfg.csv_mode)
+            opened.append(new_writer)
+
+        if influx_settings_changed(cfg, new_cfg):
+            new_influx = open_influx_writer(new_cfg)
+            if new_influx is not None:
+                opened.append(new_influx)
+    except Exception:
+        # Roll back: drop what we just opened, keep the live resources.
+        for resource in opened:
+            with contextlib.suppress(Exception):
+                resource.close()  # type: ignore[attr-defined]
+        raise
+
+    for old, replacement in (
+        (client, new_client),
+        (writer, new_writer),
+        (influx_writer, new_influx),
+    ):
+        if old is not None and old is not replacement:
+            with contextlib.suppress(Exception):
+                old.close()
+
+    return new_cfg, new_client, new_writer, new_influx
+
+
 def read_device_response(client: SerialClient, cfg: AppConfig) -> str:
     command = build_serial_command(cfg)
     return get_device_profile(cfg.device_type).read_response(client, command)
@@ -407,42 +481,9 @@ def main() -> None:
                     setup_logging(new_cfg)
                     logging.info("Konfiguracja przeładowana")
 
-                    serial_settings_changed = (
-                        new_cfg.serial_port != cfg.serial_port
-                        or new_cfg.baudrate != cfg.baudrate
-                        or new_cfg.bytesize != cfg.bytesize
-                        or new_cfg.parity != cfg.parity
-                        or new_cfg.stopbits != cfg.stopbits
-                        or new_cfg.line_terminator != cfg.line_terminator
-                        or new_cfg.rs485_address != cfg.rs485_address
-                        or new_cfg.timeout != cfg.timeout
-                        or new_cfg.write_timeout != cfg.write_timeout
-                        or new_cfg.device_type != cfg.device_type
+                    cfg, client, writer, influx_writer = apply_new_config(
+                        cfg, new_cfg, client, writer, influx_writer
                     )
-
-                    if serial_settings_changed:
-                        if client is not None:
-                            client.close()
-                        client = open_client(new_cfg)
-
-                    if client is None:
-                        raise RuntimeError("collector serial client is not open")
-
-                    new_cfg = resolve_runtime_config(new_cfg, client)
-
-                    if (
-                        new_cfg.csv_filepath != cfg.csv_filepath
-                        or new_cfg.csv_mode != cfg.csv_mode
-                    ) and writer is not None:
-                        writer.close()
-                        writer = CsvWriter(new_cfg.csv_filepath, mode=new_cfg.csv_mode)
-
-                    if influx_settings_changed(cfg, new_cfg):
-                        if influx_writer is not None:
-                            influx_writer.close()
-                        influx_writer = open_influx_writer(new_cfg)
-
-                    cfg = new_cfg
                 except (
                     ConfigValidationError,
                     DeviceDiscoveryError,
