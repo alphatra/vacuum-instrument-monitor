@@ -676,7 +676,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(vacuum_pressure_pressure_torr{device=~\"$device\"}, channel)",
+        "definition": "label_values(vacuum_pressure_latency_ms{device=~\"$device\"}, channel)",
         "hide": 0,
         "includeAll": true,
         "label": "Kanał",
@@ -684,7 +684,7 @@
         "name": "channel",
         "options": [],
         "query": {
-          "query": "label_values(vacuum_pressure_pressure_torr{device=~\"$device\"}, channel)",
+          "query": "label_values(vacuum_pressure_latency_ms{device=~\"$device\"}, channel)",
           "refId": "ChannelVariable"
         },
         "refresh": 2,

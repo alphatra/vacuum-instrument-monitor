@@ -51,3 +51,22 @@ def test_quality_panel_counts_samples_over_time() -> None:
     assert "count_over_time(" in expression
     assert "sum by (quality)" in expression
     assert "[$__interval]" in expression
+
+
+def test_prometheus_channel_variable_uses_always_present_latency_metric() -> None:
+    """A channel whose readings all fail must still be selectable.
+
+    The writer omits pressure_torr for failed readings, so a channel that
+    never reports a good one - a VGC402 input with no sensor attached, for
+    instance - would be missing from the dropdown, which is exactly the
+    channel an operator needs to look at.
+    """
+    dashboard = json.loads(PROMETHEUS_DASHBOARD.read_text(encoding="utf-8"))
+    channel_variable = next(
+        item for item in dashboard["templating"]["list"] if item["name"] == "channel"
+    )
+
+    assert "vacuum_pressure_latency_ms" in channel_variable["definition"]
+    assert "vacuum_pressure_latency_ms" in channel_variable["query"]["query"]
+    assert "vacuum_pressure_pressure_torr" not in channel_variable["definition"]
+    assert "vacuum_pressure_pressure_torr" not in channel_variable["query"]["query"]
