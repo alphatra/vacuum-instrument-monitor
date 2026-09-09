@@ -143,11 +143,23 @@ from(bucket: "vacuum")
 
 ## 5. Grafana panele
 
-Gotowy dashboard:
+Dwa gotowe dashboardy, zależnie od tego, gdzie trafiają dane:
 
-```text
-grafana/vacuum-dashboard.json
-```
+| Plik | Dla kogo | Język zapytań |
+| --- | --- | --- |
+| `grafana/vacuum-dashboard.json` | własny InfluxDB v2 | Flux |
+| `grafana/vacuum-dashboard-prometheus.json` | Grafana Cloud | PromQL |
+
+Wersja dla Grafana Cloud sama wykrywa podłączone przyrządy: zmienne
+`Urządzenie` i `Kanał` czytają etykiety z metryk, a panel ciśnienia jest
+powtarzany dla każdego urządzenia. Dwa GP350 i dwa VGC402 nie wymagają
+żadnej zmiany w dashboardzie - dojdą same, gdy zaczną wysyłać dane.
+
+Import:
+
+1. Dashboards -> New -> Import
+2. Wgraj wybrany plik JSON
+3. Wybierz data source (Prometheus dla Grafana Cloud, InfluxDB dla własnej bazy)
 
 Import:
 
