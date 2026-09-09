@@ -116,6 +116,30 @@ Szczegóły w [Podłączenie GP350 przez ADS1115](gp350-analog-ads1115-wiring.md
 progu (domyślnie 10.05V), co zwykle znaczy, że czujnik jonizacyjny jest
 wyłączony. To informacja z urządzenia, nie awaria pomiaru.
 
+## Usługa zatrzymała się sama
+
+Kolektor kończy pracę po **10 nieudanych odczytach z rzędu** i zapisuje w logu:
+
+```text
+Zbyt wiele błędów z rzędu (10), zatrzymuję kolektor
+```
+
+To zachowanie celowe. Trwała awaria — odłączony czujnik, padnięta magistrala
+I2C, wyciągnięty kabel — powinna być widoczna jako zatrzymana usługa, a nie
+jako usługa „działająca", która nie produkuje danych.
+
+Pojedyncze błędy przeplatane poprawnymi odczytami **nie** zatrzymują pomiaru;
+licznik zeruje się po każdym udanym odczycie.
+
+Pełny ślad błędu pojawia się w logu raz na serię, kolejne to krótkie linie.
+Jeśli szukasz przyczyny, patrz na **pierwszy** wpis serii.
+
+Po usunięciu przyczyny uruchom usługę ponownie:
+
+```bash
+sudo systemctl restart vacuum-monitor-collector@gp350-analog-arduino.service
+```
+
 ## Kiedy na pewno wołać programistę
 
 - Log pokazuje `Traceback` (wielolinijkowy tekst techniczny z angielskimi

@@ -13,6 +13,30 @@ from collectors.influx_writer import InfluxConfig, InfluxWriter
 from collectors.measurements import MeasurementReading
 from simulators.enums import ParsedQuality
 
+# A sensor that keeps failing should surface as a failed unit, not as a
+# healthy one producing nothing.
+MAX_CONSECUTIVE_ERRORS = 10
+
+
+class FailureRun:
+    """Tracks one continuous run of failures.
+
+    The first failure carries the stack trace; repeats of the same fault get
+    a short line, so an unplugged sensor cannot flood the journal.
+    """
+
+    def __init__(self, limit: int = MAX_CONSECUTIVE_ERRORS):
+        self.limit = limit
+        self.count = 0
+
+    def failure(self) -> tuple[bool, bool]:
+        """Return (log_traceback, reached_limit)."""
+        self.count += 1
+        return self.count == 1, self.count >= self.limit
+
+    def success(self) -> None:
+        self.count = 0
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Kolektor GP350 przez ADS1115")
@@ -68,6 +92,90 @@ def error_reading(error: Exception) -> MeasurementReading:
     )
 
 
+def run_collection_loop(
+    adc: ADS1115,
+    cfg: Ads1115Config,
+    writer: CsvWriter,
+    influx_writer: InfluxWriter | None,
+    *,
+    max_iterations: int | None = None,
+) -> None:
+    """Read, record and publish until interrupted.
+
+    max_iterations bounds the loop for tests; production leaves it unset.
+    """
+    iterations = 0
+    failures = FailureRun()
+
+    while max_iterations is None or iterations < max_iterations:
+        iterations += 1
+        loop_start = time.monotonic()
+        measurement_start = time.monotonic()
+        stop_after_write = False
+        try:
+            reading = read_gp350_analog(adc, cfg)
+            failures.success()
+        except Exception as error:
+            log_traceback, stop_after_write = failures.failure()
+            if log_traceback:
+                logging.exception("Błąd odczytu ADS1115: %s", error)
+            else:
+                logging.error(
+                    "Błąd odczytu ADS1115 (%s z rzędu): %s", failures.count, error
+                )
+            reading = error_reading(error)
+        latency_ms = (time.monotonic() - measurement_start) * 1000.0
+        timestamp = datetime.datetime.now(datetime.UTC).isoformat()
+        record = MeasurementRecord(
+            timestamp=timestamp,
+            device=cfg.device_name,
+            channel=cfg.channel,
+            latency_ms=latency_ms,
+            reading=reading,
+        )
+        writer.write(record)
+        if influx_writer is not None:
+            try:
+                influx_writer.write(record)
+            except Exception as error:
+                logging.exception("Błąd zapisu InfluxDB: %s", error)
+                if cfg.influx_fail_on_error:
+                    raise
+
+        log = (
+            logging.warning
+            if reading.quality is not ParsedQuality.GOOD
+            else logging.info
+        )
+        log(
+            "Pomiar channel=%s quality=%s pressure=%s signal_voltage=%s "
+            "adc_voltage=%s raw=%s latency=%.2fms",
+            record.channel,
+            reading.quality.value,
+            reading.pressure_torr,
+            reading.signal_voltage,
+            reading.adc_voltage,
+            reading.adc_raw,
+            latency_ms,
+        )
+        print(
+            f"[{timestamp}] device={record.device} channel={record.channel} "
+            f"quality={reading.quality.value} "
+            f"pressure={reading.pressure_torr} Torr "
+            f"signal_voltage={reading.signal_voltage} V"
+        )
+
+        if stop_after_write:
+            logging.error(
+                "Zbyt wiele błędów z rzędu (%s), zatrzymuję kolektor", failures.count
+            )
+            return
+
+        sleep_time = cfg.interval_seconds - (time.monotonic() - loop_start)
+        if sleep_time > 0:
+            time.sleep(sleep_time)
+
+
 def main() -> None:
     args = parse_args()
     try:
@@ -102,58 +210,8 @@ def main() -> None:
             cfg.emission_current_ma,
         )
 
-        while True:
-            loop_start = time.monotonic()
-            measurement_start = time.monotonic()
-            try:
-                reading = read_gp350_analog(adc, cfg)
-            except Exception as error:
-                logging.exception("Błąd odczytu ADS1115: %s", error)
-                reading = error_reading(error)
-            latency_ms = (time.monotonic() - measurement_start) * 1000.0
-            timestamp = datetime.datetime.now(datetime.UTC).isoformat()
-            record = MeasurementRecord(
-                timestamp=timestamp,
-                device=cfg.device_name,
-                channel=cfg.channel,
-                latency_ms=latency_ms,
-                reading=reading,
-            )
-            writer.write(record)
-            if influx_writer is not None:
-                try:
-                    influx_writer.write(record)
-                except Exception as error:
-                    logging.exception("Błąd zapisu InfluxDB: %s", error)
-                    if cfg.influx_fail_on_error:
-                        raise
+        run_collection_loop(adc, cfg, writer, influx_writer)
 
-            log = (
-                logging.warning
-                if reading.quality is not ParsedQuality.GOOD
-                else logging.info
-            )
-            log(
-                "Pomiar channel=%s quality=%s pressure=%s signal_voltage=%s "
-                "adc_voltage=%s raw=%s latency=%.2fms",
-                record.channel,
-                reading.quality.value,
-                reading.pressure_torr,
-                reading.signal_voltage,
-                reading.adc_voltage,
-                reading.adc_raw,
-                latency_ms,
-            )
-            print(
-                f"[{timestamp}] device={record.device} channel={record.channel} "
-                f"quality={reading.quality.value} "
-                f"pressure={reading.pressure_torr} Torr "
-                f"signal_voltage={reading.signal_voltage} V"
-            )
-
-            sleep_time = cfg.interval_seconds - (time.monotonic() - loop_start)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
     except KeyboardInterrupt:
         logging.info("Przerwano przez użytkownika")
     finally:
