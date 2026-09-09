@@ -6,6 +6,11 @@ from typing import Any
 import serial
 from serial.tools import list_ports
 
+from collectors.arduino_adc import (
+    ARDUINO_ADC_BAUDRATES,
+    ARDUINO_ADC_DEVICE_TYPE,
+    is_arduino_adc_response,
+)
 from collectors.vgc402 import ACK, ENQ, NAK, VGC402_BAUDRATES, VGC402Parser
 from simulators import GP350Parser, ParsedQuality
 
@@ -27,6 +32,9 @@ class DetectionProbe:
     command: str
     rs485_address: int | None = None
     protocol: str = "plain"
+    # Boards that reset when the port opens (Arduino) need time before they
+    # answer; other instruments are ready immediately.
+    settle_delay: float = 0.0
 
     @property
     def serial_command(self) -> str:
@@ -94,6 +102,21 @@ VGC402_DIRECT_PROBES = tuple(
     for command in ("PR1", "PR2")
 )
 
+ARDUINO_ADC_PROBES = tuple(
+    DetectionProbe(
+        device_type=ARDUINO_ADC_DEVICE_TYPE,
+        module_type="arduino",
+        baudrate=baudrate,
+        bytesize=8,
+        parity="none",
+        stopbits=1.0,
+        line_terminator="\n",
+        command="READ",
+        settle_delay=2.5,
+    )
+    for baudrate in ARDUINO_ADC_BAUDRATES
+)
+
 PARITY_MAP = {
     "none": serial.PARITY_NONE,
     "even": serial.PARITY_EVEN,
@@ -108,8 +131,17 @@ def discover_serial_devices(
     *,
     ports: Iterable[Any] | None = None,
     port_names: Iterable[str] | None = None,
-    include_device_types: Iterable[str] = ("gp350", "inficon_vgc402"),
-    include_module_types: Iterable[str] = ("digital", "rs232", "serial"),
+    include_device_types: Iterable[str] = (
+        "gp350",
+        "inficon_vgc402",
+        ARDUINO_ADC_DEVICE_TYPE,
+    ),
+    include_module_types: Iterable[str] = (
+        "digital",
+        "rs232",
+        "serial",
+        "arduino",
+    ),
     rs485_addresses: Iterable[int] = (),
     timeout: float = 0.35,
     write_timeout: float | None = None,
@@ -189,8 +221,17 @@ def probe_serial_port(
     port: str,
     *,
     port_info: Any | None = None,
-    include_device_types: Iterable[str] = ("gp350", "inficon_vgc402"),
-    include_module_types: Iterable[str] = ("digital", "rs232", "serial"),
+    include_device_types: Iterable[str] = (
+        "gp350",
+        "inficon_vgc402",
+        ARDUINO_ADC_DEVICE_TYPE,
+    ),
+    include_module_types: Iterable[str] = (
+        "digital",
+        "rs232",
+        "serial",
+        "arduino",
+    ),
     rs485_addresses: Iterable[int] = (),
     timeout: float = 0.35,
     write_timeout: float | None = None,
@@ -336,6 +377,9 @@ def _build_probes(
     if "inficon_vgc402" in device_types and "serial" in module_types:
         probes.extend(VGC402_DIRECT_PROBES)
 
+    if ARDUINO_ADC_DEVICE_TYPE in device_types and "arduino" in module_types:
+        probes.extend(ARDUINO_ADC_PROBES)
+
     if "gp350" in device_types and "digital" in module_types:
         probes.extend(
             DetectionProbe(
@@ -375,8 +419,9 @@ def _try_probe(
             timeout=timeout,
             write_timeout=write_timeout,
         ) as serial_port:
-            if settle_delay > 0:
-                time.sleep(settle_delay)
+            probe_settle = max(settle_delay, probe.settle_delay)
+            if probe_settle > 0:
+                time.sleep(probe_settle)
 
             serial_port.reset_input_buffer()
             serial_port.reset_output_buffer()
@@ -470,6 +515,9 @@ def _score_probe_response(probe: DetectionProbe, raw_response: str) -> float:
 
     if probe.device_type == "inficon_vgc402":
         return _score_vgc402_response(raw_response)
+
+    if probe.device_type == ARDUINO_ADC_DEVICE_TYPE:
+        return 1.0 if is_arduino_adc_response(raw_response) else 0.0
 
     return 0.0
 

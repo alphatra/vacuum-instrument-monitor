@@ -1,3 +1,4 @@
+from devices.arduino_adc import ARDUINO_ADC_PROFILE
 from devices.base import DeviceProfile
 from devices.gp350 import GP350_PROFILE
 from devices.vgc402 import VGC402_PROFILE
@@ -5,6 +6,7 @@ from devices.vgc402 import VGC402_PROFILE
 DEVICE_PROFILES: dict[str, DeviceProfile] = {
     GP350_PROFILE.device_type: GP350_PROFILE,
     VGC402_PROFILE.device_type: VGC402_PROFILE,
+    ARDUINO_ADC_PROFILE.device_type: ARDUINO_ADC_PROFILE,
 }
 
 

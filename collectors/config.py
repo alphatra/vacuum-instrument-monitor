@@ -3,6 +3,12 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from collectors.analog import GP350_ANALOG_EMISSION_OFFSETS
+from collectors.arduino_adc import (
+    ARDUINO_ADC_BAUDRATES,
+    ARDUINO_ADC_COMMANDS,
+    ARDUINO_ADC_DEVICE_TYPE,
+)
 from collectors.vgc402 import (
     VGC402_AUTO_PRESSURE_UNIT,
     VGC402_BAUDRATES,
@@ -34,11 +40,20 @@ MODULE_DEFAULTS = {
         "line_terminator": "\r\n",
         "command": "PR1",
     },
+    "arduino": {
+        "baudrate": 9600,
+        "bytesize": 8,
+        "parity": "none",
+        "stopbits": 1.0,
+        "line_terminator": "\n",
+        "command": "READ",
+    },
 }
 
-DEVICE_TYPES = {"auto", "gp350", "inficon_vgc402"}
+DEVICE_TYPES = {"auto", "gp350", "inficon_vgc402", ARDUINO_ADC_DEVICE_TYPE}
 GP350_MODULE_TYPES = {"auto", "rs232", "digital"}
 VGC402_MODULE_TYPES = {"auto", "serial"}
+ARDUINO_ADC_MODULE_TYPES = {"auto", "arduino"}
 
 TERMINATOR_ALIASES = {
     "crlf": "\r\n",
@@ -78,6 +93,12 @@ class AppConfig:
     device_name: str = "GP350_1"
     channel: str = "IG1"
     pressure_unit: str = "Torr"
+    # Analog bridge calibration; only read for device_type=arduino_adc.
+    divider_top_ohms: float = 68000.0
+    divider_bottom_ohms: float = 22000.0
+    signal_voltage_offset: float = 0.0
+    emission_current_ma: float = 1.0
+    fault_voltage_threshold: float = 10.05
     csv_filepath: str = "data/vacuum_readings.csv"
     csv_mode: str = "overwrite"
     log_file: str = "logs/collector.log"
@@ -246,6 +267,31 @@ class AppConfig:
                     "pressure_unit",
                     fallback=defaults.pressure_unit,
                 ).strip(),
+                divider_top_ohms=config.getfloat(
+                    "Calibration",
+                    "divider_top_ohms",
+                    fallback=defaults.divider_top_ohms,
+                ),
+                divider_bottom_ohms=config.getfloat(
+                    "Calibration",
+                    "divider_bottom_ohms",
+                    fallback=defaults.divider_bottom_ohms,
+                ),
+                signal_voltage_offset=config.getfloat(
+                    "Calibration",
+                    "signal_voltage_offset",
+                    fallback=defaults.signal_voltage_offset,
+                ),
+                emission_current_ma=config.getfloat(
+                    "GP350",
+                    "emission_current_ma",
+                    fallback=defaults.emission_current_ma,
+                ),
+                fault_voltage_threshold=config.getfloat(
+                    "GP350",
+                    "fault_voltage_threshold",
+                    fallback=defaults.fault_voltage_threshold,
+                ),
                 csv_filepath=config.get(
                     "File",
                     "csv_filepath",
@@ -325,6 +371,9 @@ class AppConfig:
     def _default_module_type(device_type: str) -> str:
         if device_type == "inficon_vgc402":
             return "serial"
+
+        if device_type == ARDUINO_ADC_DEVICE_TYPE:
+            return "arduino"
 
         return "digital"
 
@@ -429,6 +478,14 @@ class AppConfig:
                 "INFICON VGC402 obsługuje module_type auto albo serial"
             )
 
+        if (
+            self.device_type == ARDUINO_ADC_DEVICE_TYPE
+            and self.module_type not in ARDUINO_ADC_MODULE_TYPES
+        ):
+            raise ConfigValidationError(
+                "Mostek Arduino obsługuje module_type auto albo arduino"
+            )
+
         valid_baudrates = self._valid_baudrates()
         if self.baudrate not in valid_baudrates:
             raise ConfigValidationError(
@@ -493,6 +550,28 @@ class AppConfig:
             raise ConfigValidationError(
                 "INFICON VGC402 obsługuje command PR1, PR2 albo PRX"
             )
+
+        if (
+            self.device_type == ARDUINO_ADC_DEVICE_TYPE
+            and self.command.upper() not in ARDUINO_ADC_COMMANDS
+        ):
+            raise ConfigValidationError("Mostek Arduino obsługuje tylko command READ")
+
+        if self.device_type == ARDUINO_ADC_DEVICE_TYPE:
+            if self.divider_top_ohms <= 0 or self.divider_bottom_ohms <= 0:
+                raise ConfigValidationError(
+                    "Calibration.divider_*_ohms muszą być dodatnie"
+                )
+
+            if self.emission_current_ma not in GP350_ANALOG_EMISSION_OFFSETS:
+                raise ConfigValidationError(
+                    "GP350.emission_current_ma musi mieć wartość 0.1, 1 albo 10"
+                )
+
+            if self.fault_voltage_threshold <= 0:
+                raise ConfigValidationError(
+                    "GP350.fault_voltage_threshold musi być dodatni"
+                )
 
         if not self.device_name:
             raise ConfigValidationError("device_name nie może być pusty")
@@ -574,10 +653,13 @@ class AppConfig:
     def _valid_baudrates(self) -> set[int]:
         gp350_baudrates = {75, 150, 300, 600, 1200, 2400, 4800, 9600, 19200}
         vgc402_baudrates = set(VGC402_BAUDRATES)
+        arduino_baudrates = set(ARDUINO_ADC_BAUDRATES)
+        if self.device_type == ARDUINO_ADC_DEVICE_TYPE or self.module_type == "arduino":
+            return arduino_baudrates
         if self.device_type == "inficon_vgc402" or self.module_type == "serial":
             return vgc402_baudrates
         if self.device_type == "auto":
-            return gp350_baudrates | vgc402_baudrates
+            return gp350_baudrates | vgc402_baudrates | arduino_baudrates
 
         return gp350_baudrates
 

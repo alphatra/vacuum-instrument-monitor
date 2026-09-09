@@ -11,6 +11,7 @@ from typing import Protocol
 
 from smbus2 import SMBus
 
+from collectors.analog import GP350_ANALOG_EMISSION_OFFSETS
 from collectors.config import ConfigValidationError
 from collectors.measurements import MeasurementReading
 from simulators.enums import ParsedQuality
@@ -37,7 +38,6 @@ ADS1115_DATA_RATE_BITS = {
     475: 6,
     860: 7,
 }
-GP350_ANALOG_EMISSION_OFFSETS = {10.0: 12.0, 1.0: 11.0, 0.1: 10.0}
 
 
 class I2cBus(Protocol):
