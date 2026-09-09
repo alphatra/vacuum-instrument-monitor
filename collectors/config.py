@@ -108,6 +108,9 @@ class AppConfig:
     influx_bucket: str = ""
     influx_token: str = ""
     influx_token_env: str = "INFLUXDB_TOKEN"
+    # Grafana Cloud: set username (instance id) and its influx write path.
+    influx_username: str = ""
+    influx_write_path: str = "/api/v2/write"
     influx_measurement: str = "vacuum_pressure"
     influx_timeout: float = 2.0
     influx_retries: int = 0
@@ -336,6 +339,16 @@ class AppConfig:
                     "InfluxDB",
                     "token_env",
                     fallback=defaults.influx_token_env,
+                ).strip(),
+                influx_username=config.get(
+                    "InfluxDB",
+                    "username",
+                    fallback=defaults.influx_username,
+                ).strip(),
+                influx_write_path=config.get(
+                    "InfluxDB",
+                    "write_path",
+                    fallback=defaults.influx_write_path,
                 ).strip(),
                 influx_measurement=config.get(
                     "InfluxDB",
@@ -614,11 +627,14 @@ class AppConfig:
                     "influx url musi zaczynać się od http:// albo https://"
                 )
 
-            if not self.influx_org:
-                raise ConfigValidationError("influx org nie może być pusty")
+            if not self.influx_username:
+                # Grafana Cloud takes the target from credentials; plain
+                # InfluxDB v2 still needs org and bucket.
+                if not self.influx_org:
+                    raise ConfigValidationError("influx org nie może być pusty")
 
-            if not self.influx_bucket:
-                raise ConfigValidationError("influx bucket nie może być pusty")
+                if not self.influx_bucket:
+                    raise ConfigValidationError("influx bucket nie może być pusty")
 
             if not self.resolved_influx_token:
                 raise ConfigValidationError(

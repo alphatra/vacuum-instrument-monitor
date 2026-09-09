@@ -227,6 +227,8 @@ def build_influx_config(cfg: AppConfig) -> InfluxConfig:
         device_type=cfg.device_type,
         module_type=cfg.module_type,
         command=build_serial_command(cfg),
+        username=cfg.influx_username,
+        write_path=cfg.influx_write_path,
     )
 
 
@@ -245,6 +247,8 @@ def influx_settings_changed(old_cfg: AppConfig, new_cfg: AppConfig) -> bool:
         or old_cfg.influx_bucket != new_cfg.influx_bucket
         or old_cfg.resolved_influx_token != new_cfg.resolved_influx_token
         or old_cfg.influx_measurement != new_cfg.influx_measurement
+        or old_cfg.influx_username != new_cfg.influx_username
+        or old_cfg.influx_write_path != new_cfg.influx_write_path
         or old_cfg.influx_timeout != new_cfg.influx_timeout
         or old_cfg.influx_retries != new_cfg.influx_retries
         or old_cfg.device_type != new_cfg.device_type

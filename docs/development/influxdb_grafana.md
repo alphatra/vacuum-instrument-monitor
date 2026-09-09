@@ -78,6 +78,38 @@ Przykładowy line protocol:
 vacuum_pressure,device=GP350_1,channel=IG1,quality=good,device_type=gp350,module_type=digital,command=RD pressure_torr=1.23e-06,latency_ms=12.346,raw_response="1.23E-06",is_good=true,unit="Torr" 1782302400000000000
 ```
 
+## 3a. Grafana Cloud zamiast własnego InfluxDB
+
+Grafana Cloud przyjmuje line protocol na hoście Prometheusa i wymaga Basic
+auth zamiast tokenu InfluxDB v2. Dane trafiają wtedy do Mimira jako metryki,
+nie do bazy InfluxDB.
+
+```ini
+[InfluxDB]
+enabled = true
+url = https://prometheus-prod-NN-prod-REGION.grafana.net
+username = 1234567
+write_path = /api/v1/push/influx/write
+token_env = INFLUXDB_TOKEN
+measurement = vacuum_pressure
+```
+
+`username` to numer instancji z Cloud Portal; ustawienie go przełącza writer
+na Basic auth. `org` i `bucket` zostają wtedy puste - Grafana Cloud ustala
+cel z samych poświadczeń.
+
+Nazwy metryk powstają jako `<measurement>_<pole>`:
+
+```text
+vacuum_pressure_pressure_torr
+vacuum_pressure_latency_ms
+vacuum_pressure_is_good
+```
+
+Pola tekstowe (`raw_response`, `unit`, `gauge_status`) są pomijane, bo
+Prometheus nie przechowuje wartości tekstowych. W CSV zostają komplet.
+Zapytania pisz w PromQL, nie we Fluxie.
+
 ## 4. Grafana query
 
 Panel ciśnienia:

@@ -1,3 +1,4 @@
+import base64
 import datetime
 import time
 import urllib.error
@@ -24,6 +25,11 @@ class InfluxConfig:
     device_type: str
     module_type: str
     command: str
+    # Grafana Cloud accepts line protocol on its Prometheus host, but wants
+    # Basic auth with the instance id and no org/bucket query. Setting
+    # username switches to that mode; empty keeps plain InfluxDB v2.
+    username: str = ""
+    write_path: str = "/api/v2/write"
 
 
 def _escape_measurement(value: str) -> str:
@@ -62,14 +68,20 @@ def _timestamp_to_ns(timestamp: str) -> int:
 class InfluxWriter:
     def __init__(self, config: InfluxConfig):
         self.config = config
-        query = urllib.parse.urlencode(
-            {
-                "org": config.org,
-                "bucket": config.bucket,
-                "precision": "ns",
-            }
-        )
-        self.write_url = f"{config.url.rstrip('/')}/api/v2/write?{query}"
+        base = f"{config.url.rstrip('/')}{config.write_path}"
+
+        if config.username:
+            # Grafana Cloud derives the target from the credentials.
+            self.write_url = base
+        else:
+            query = urllib.parse.urlencode(
+                {
+                    "org": config.org,
+                    "bucket": config.bucket,
+                    "precision": "ns",
+                }
+            )
+            self.write_url = f"{base}?{query}"
 
     def write(self, record: MeasurementRecord) -> None:
         line = self.to_line_protocol(record)
@@ -126,13 +138,20 @@ class InfluxWriter:
         timestamp_ns = _timestamp_to_ns(record.timestamp)
         return f"{measurement},{','.join(tags)} {','.join(fields)} {timestamp_ns}"
 
+    def _authorization_header(self) -> str:
+        if self.config.username:
+            raw = f"{self.config.username}:{self.config.token}".encode()
+            return "Basic " + base64.b64encode(raw).decode("ascii")
+
+        return f"Token {self.config.token}"
+
     def _post(self, payload: bytes) -> None:
         request = urllib.request.Request(
             self.write_url,
             data=payload,
             method="POST",
             headers={
-                "Authorization": f"Token {self.config.token}",
+                "Authorization": self._authorization_header(),
                 "Content-Type": "text/plain; charset=utf-8",
             },
         )
