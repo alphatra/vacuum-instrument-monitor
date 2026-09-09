@@ -81,6 +81,50 @@ Pliki konfiguracji są w `/etc/vacuum-monitor/`. Co wolno zmieniać opisuje
 sudo systemctl restart vacuum-monitor-ads1115@gp350-analog-ads1115.service
 ```
 
+## Dwa przyrządy naraz
+
+Każdy przyrząd to osobna usługa z własnym plikiem konfiguracji, np. VGC402 na
+kablu RS-232 i GP350 czytany przez Arduino:
+
+```bash
+sudo scripts/install_linux_service.sh vgc402
+sudo scripts/install_linux_service.sh gp350-analog-arduino
+```
+
+Podgląd obu naraz:
+
+```bash
+journalctl -u 'vacuum-monitor-collector@*' -f
+```
+
+### Nadaj portom stałe nazwy
+
+Przy dwóch przyrządach **nie zostawiaj `serial_port = auto`**. Każdy kolektor
+przy starcie sprawdza wtedy wszystkie porty po kolei, także ten należący do
+drugiego przyrządu. Arduino resetuje się przy każdym otwarciu swojego portu,
+więc traci wtedy odczyty.
+
+Skopiuj szablon reguł, wstaw numery seryjne swoich urządzeń i zainstaluj:
+
+```bash
+cp udev/99-vacuum-monitor.rules.example udev/99-vacuum-monitor.rules
+udevadm info -q property -n /dev/ttyACM0
+sudo scripts/install_udev_rules.sh /opt/vacuum-instrument-monitor/udev/99-vacuum-monitor.rules
+```
+
+Powstaną stałe nazwy niezależne od kolejności wpinania:
+
+```bash
+ls -l /dev/vacuum-*
+```
+
+Wpisz je do plików konfiguracji zamiast `auto`:
+
+```ini
+[Connection]
+serial_port = /dev/vacuum-arduino
+```
+
 ## Aktualizacja do nowszej wersji
 
 ```bash

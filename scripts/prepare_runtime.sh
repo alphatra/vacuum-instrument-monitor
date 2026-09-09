@@ -58,7 +58,8 @@ fi
 
 # Build .venv with the system interpreter so nothing points into /home.
 echo "Building .venv with $SYSTEM_PYTHON"
-"$UV_BIN" venv --python "$SYSTEM_PYTHON" "$APP_DIR/.venv" >/dev/null
+# --clear: rebuild in place, the venv usually already exists on redeploys.
+"$UV_BIN" venv --clear --python "$SYSTEM_PYTHON" "$APP_DIR/.venv" >/dev/null
 (cd "$APP_DIR" && "$UV_BIN" sync --no-dev --python "$SYSTEM_PYTHON" >/dev/null)
 
 venv_python="$(readlink -f "$APP_DIR/.venv/bin/python")"
